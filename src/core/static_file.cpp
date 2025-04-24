@@ -9,6 +9,7 @@
 #include <sstream>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "core/http_response.h"
@@ -46,9 +47,48 @@ namespace {
         oss << std::put_time(&local_time, "%Y-%m-%d %H:%M");
         return oss.str();
     }
+
+    std::string htmlEscape(const std::string& str) {
+        std::string escaped;
+        for (const char chr : str) {
+            switch (chr) {
+                case '&':
+                    escaped += "&amp;";
+                    break;
+                case '<':
+                    escaped += "&lt;";
+                    break;
+                case '>':
+                    escaped += "&gt;";
+                    break;
+                case '"':
+                    escaped += "&quot;";
+                    break;
+                case '\'':
+                    escaped += "&#39;";
+                    break;
+                default:
+                    escaped += chr;
+            }
+        }
+        return escaped;
+    }
+
+    void renderTemplate(std::string& str, const std::string& key, const std::string& value) {
+        size_t pos = 0;
+        while ((pos = str.find(key, pos)) != std::string::npos) {
+            str.replace(pos, key.length(), value);
+            pos += value.length();
+        }
+    }
+
+    std::string ensureTrailingSlash(const std::string& path) {
+        return path.ends_with('/') ? path : path + '/';
+    }
 }  // namespace
 
-StaticFile::StaticFile(Logger* logger, const std::string_view relative_path) : logger_(logger) {
+StaticFile::StaticFile(Logger* logger, const std::string_view relative_path, std::string prefix)
+    : drive_prefix_(std::move(prefix)), logger_(logger) {
 #ifdef ROOT_PATH
     std::filesystem::path root_path = STR(ROOT_PATH);
 #else
@@ -73,26 +113,39 @@ std::string StaticFile::serve(const std::string& path, const Address& info) cons
     }
 
     if (is_directory(full_path)) {
-        if (!path.ends_with('/')) {
-            std::string corrected_url = path + '/';
-            logger_->log(LogLevel::INFO, info,
-                         std::format("Redirecting to directory with trailing slash: {} -> {}", path, corrected_url));
+        // 只允许访问 files 及其子目录
+        if (decoded_path == drive_prefix_ || decoded_path.starts_with(drive_prefix_ + '/')) {
+            // 如果请求的路径没有以斜杠结尾，则重定向到带斜杠的路径
+            if (!path.ends_with('/')) {
+                std::string corrected_url = path + '/';
+                logger_->log(
+                    LogLevel::INFO, info,
+                    std::format("Redirecting to directory with trailing slash: {} -> {}", path, corrected_url));
 
+                return HttpResponse{}
+                    .setStatus("301 Moved Permanently")
+                    .addHeader("Location", corrected_url)
+                    .setContentType("text/plain; charset=UTF-8")
+                    .setBody("Redirecting to " + corrected_url)
+                    .build();
+            }
+
+            // 获取相对于 files 的路径
+            std::string virtual_path = path.substr(std::string(drive_prefix_).length());
+            virtual_path = ensureTrailingSlash(virtual_path);
+
+            // 生成网盘目录列表
+            logger_->log(LogLevel::DEBUG, info, std::format("Serving directory listing for: {}", full_path.string()));
             return HttpResponse{}
-                .setStatus("301 Moved Permanently")
-                .addHeader("Location", corrected_url)
-                .setContentType("text/plain")
-                .setBody("Redirecting to " + corrected_url)
+                .setStatus("200 OK")
+                .setContentType("text/html; charset=UTF-8")
+                .setBody(generateDirectoryListing(full_path, virtual_path))
                 .build();
         }
 
-        // 生成目录列表
-        logger_->log(LogLevel::DEBUG, info, std::format("Serving directory listing for: {}", full_path.string()));
-        return HttpResponse{}
-            .setStatus("200 OK")
-            .setContentType("text/html; charset=UTF-8")
-            .setBody(generateDirectoryListing(full_path, path))
-            .build();
+        logger_->log(LogLevel::DEBUG, info, std::format("Requested path is a directory: {}", full_path.string()));
+        constexpr int error_code = 404;
+        return HttpResponse::buildErrorResponse(error_code);
     }
 
     if (auto cached = readFromCache(full_path, info)) {
@@ -123,7 +176,7 @@ std::string StaticFile::serve(const std::string& path, const Address& info) cons
 }
 
 std::string StaticFile::generateDirectoryListing(const std::filesystem::path& dir_path,
-                                                 const std::string& request_path) {
+                                                 const std::string& request_path) const {
     std::vector<std::filesystem::directory_entry> directories;
     std::vector<std::filesystem::directory_entry> files;
 
@@ -141,94 +194,76 @@ std::string StaticFile::generateDirectoryListing(const std::filesystem::path& di
     std::ranges::sort(directories, filename_less);
     std::ranges::sort(files, filename_less);
 
-    std::ostringstream html;
-
-    html << R"(
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Index of )"
-         << Url::decode(request_path) << R"(</title>
-    <style>
-        body { font-family: 'Segoe UI', sans-serif; background-color: #f8f9fa; color: #343a40; padding: 2rem 3rem; }
-        h1 { color: #007bff; font-size: 2.5rem; line-height: 1.2; margin-bottom: 2rem; }
-        table { width: 100%; border-collapse: collapse; font-size: 1rem; }
-        th, td { text-align: left; padding: 0.75rem 1rem; }
-        th { background-color: #e9f5ff; border-bottom: 2px solid #007bff; }
-        tr:nth-child(even) { background-color: #f1f3f5; }
-        a { text-decoration: none; color: #007bff; }
-        a:hover { text-decoration: underline; }
-        .icon { margin-right: 0.5rem; }
-    </style>
-</head>
-<body>
-    <h1>📁 Index of )"
-         << Url::decode(request_path) << R"(</h1>
-    <table>
-        <tr>
-            <th>Name</th>
-            <th>Size</th>
-            <th>Last Modified</th>
-        </tr>
-)";
+    std::ostringstream entries;
 
     // 返回上级
     if (request_path != "/") {
-        html << R"(
+        entries << R"(
         <tr>
             <td><a href="../">⬅️ ../</a></td>
             <td>-</td>
             <td>-</td>
-        </tr>
-    )";
+            <td>-</td>
+        </tr>)";
     }
 
-    std::string base_path = request_path;
-    if (!base_path.empty() && base_path.back() != '/') {
-        base_path += '/';
-    }
+    std::string base_path = drive_prefix_ + request_path;
+    base_path = ensureTrailingSlash(base_path);
 
     // 目录
     for (const auto& dir : directories) {
-        const std::string name = dir.path().filename().string();
+        const std::string name = htmlEscape(dir.path().filename().string());
         const std::string href = (std::filesystem::path(base_path) / Url::encode(name)).string() + '/';
         const std::string time = formatTime(last_write_time(dir));
 
-        html << std::format(R"(
+        entries << std::format(R"(
         <tr>
             <td><a href="{}">📁 {}/</a></td>
             <td>-</td>
             <td>{}</td>
-        </tr>
-    )",
-                            href, name, time);
+            <td>-</td>
+        </tr>)",
+                               href, name, time);
     }
 
     // 文件
     for (const auto& file : files) {
-        const std::string name = file.path().filename().string();
+        const std::string name = htmlEscape(file.path().filename().string());
         const std::string href = (std::filesystem::path(base_path) / Url::encode(name)).string();
         const std::string size = formatSize(file_size(file));
         const std::string time = formatTime(last_write_time(file));
 
-        html << std::format(R"(
+        entries << std::format(R"(
         <tr>
             <td><a href="{}">📄 {}</a></td>
             <td>{}</td>
             <td>{}</td>
-        </tr>
-    )",
-                            href, name, size, time);
+            <td><a href="{}" download>Download</a></td>
+        </tr>)",
+                               href, name, size, time, href);
     }
 
-    html << R"(
-    </table>
-</body>
-</html>
-)";
+    // 读取文件内容
+#ifdef ROOT_PATH
+    std::filesystem::path root_path = STR(ROOT_PATH);
+#else
+    std::filesystem::path root_path = std::filesystem::current_path();
+#endif
+    std::ifstream file(root_path / "static/templates/directory_listing.html");
+    if (!file.is_open()) {
+        logger_->log(LogLevel::ERROR, "Template file missing: directory_listing.html");
+        return "<h1>Template missing</h1>";
+    }
 
-    return html.str();
+    std::ostringstream buffer;
+    buffer << file.rdbuf();
+    std::string html = buffer.str();
+
+    // 替换关键字
+    renderTemplate(html, "{{path}}", Url::decode(request_path));
+    renderTemplate(html, "{{entries}}", entries.str());
+
+    return html;
 }
 
 bool StaticFile::isPathSafe(const std::filesystem::path& path) const {

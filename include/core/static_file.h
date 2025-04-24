@@ -20,13 +20,14 @@ class Logger;
 
 class StaticFile {
 public:
-    explicit StaticFile(Logger* logger, std::string_view relative_path = "./static");
+    explicit StaticFile(Logger* logger, std::string_view relative_path = "./static", std::string prefix = "/files");
 
     [[nodiscard]] std::string serve(const std::string& path, const Address& info) const;
 
 private:
-    std::filesystem::path root_;  // 静态文件根目录
-    Logger* logger_;              // 日志
+    std::filesystem::path root_;      // 静态文件根目录
+    const std::string drive_prefix_;  // 网盘文件目录
+    Logger* logger_;                  // 日志
 
     mutable std::unordered_map<std::filesystem::path, CacheEntry> cache_;
     mutable std::mutex cache_mutex_;
@@ -38,8 +39,8 @@ private:
     [[nodiscard]] std::optional<HttpResponse> readFromCache(const std::filesystem::path& path,
                                                             const Address& info) const;
 
-    [[nodiscard]] static std::string generateDirectoryListing(const std::filesystem::path& dir_path,
-                                                              const std::string& request_path);
+    [[nodiscard]] std::string generateDirectoryListing(const std::filesystem::path& dir_path,
+                                                       const std::string& request_path) const;
 
     void updateCache(const std::filesystem::path& path, const HttpResponse& builder) const;
 };

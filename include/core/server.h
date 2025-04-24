@@ -47,7 +47,7 @@ private:
     std::atomic_flag close_list_dirty_ = ATOMIC_FLAG_INIT;  // 标记关闭列表是否被修改
     std::mutex close_mutex_;
 
-    StaticFile static_file_{logger_, "./static"};  // 静态文件目录
+    StaticFile static_file_{logger_, "./static", "/files"};  // 静态文件目录
 
     // 创建并配置 socket，绑定端口并监听连接
     void setupSocket();

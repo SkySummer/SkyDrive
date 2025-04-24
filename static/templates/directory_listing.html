@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Index of {{path}}</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background-color: #f8f9fa;
+            color: #343a40;
+            padding: 2rem 3rem;
+        }
+
+        h1 {
+            color: #007bff;
+            font-size: 2.5rem;
+            line-height: 1.2;
+            margin-bottom: 1rem;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 1rem;
+        }
+
+        th,
+        td {
+            text-align: left;
+            padding: 0.75rem 1rem;
+        }
+
+        th {
+            background-color: #e9f5ff;
+            border-bottom: 2px solid #007bff;
+        }
+
+        tr:nth-child(even) {
+            background-color: #f1f3f5;
+        }
+
+        a {
+            text-decoration: none;
+            color: #007bff;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+        .icon {
+            margin-right: 0.5rem;
+        }
+
+        .top-bar {
+            text-align: right;
+            margin-bottom: 1rem;
+        }
+
+        .upload-btn {
+            display: inline-block;
+            padding: 0.6rem 1.2rem;
+            font-size: 1rem;
+            background-color: #007bff;
+            border: none;
+            color: white;
+            border-radius: 5px;
+            cursor: pointer;
+            text-decoration: none;
+        }
+
+        .upload-btn:hover {
+            background-color: #0056b3;
+            text-decoration: none;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="top-bar">
+        <a class="upload-btn" href="/upload">Upload</a>
+    </div>
+    <h1>📁 Index of {{path}}</h1>
+    <table>
+        <tr>
+            <th>Name</th>
+            <th>Size</th>
+            <th>Last Modified</th>
+            <th>Action</th>
+        </tr>
+        {{entries}}
+    </table>
+</body>
+
+</html>
