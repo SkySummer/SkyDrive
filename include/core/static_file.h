@@ -1,5 +1,5 @@
-#ifndef STATIC_FILE_H
-#define STATIC_FILE_H
+#ifndef CORE_STATIC_FILE_H
+#define CORE_STATIC_FILE_H
 
 #include <filesystem>
 #include <mutex>
@@ -44,4 +44,4 @@ private:
     void updateCache(const std::filesystem::path& path, const HttpResponse& builder) const;
 };
 
-#endif  // STATIC_FILE_H
+#endif  // CORE_STATIC_FILE_H
