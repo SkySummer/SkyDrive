@@ -1,25 +1,23 @@
 #ifndef CORE_SERVER_H
 #define CORE_SERVER_H
 
-#include <atomic>
 #include <cstdint>
+#include <memory>
 #include <mutex>
-#include <string>
 #include <unordered_map>
-#include <unordered_set>
 
 #include "core/epoll_manager.h"
 #include "core/static_file.h"
 #include "core/threadpool.h"
 
 // 前向声明
-class Address;
+class Connection;
 class Logger;
 
 class Server {
 public:
     // 构造函数：初始化服务器并指定监听端口
-    explicit Server(uint16_t port, bool linger, size_t thread_count, Logger* logger);
+    explicit Server(uint16_t port, bool linger, Logger* logger, size_t thread_count);
 
     // 析构函数：关闭 socket 与 epoll 相关资源
     ~Server();
@@ -33,20 +31,16 @@ public:
     void run();
 
 private:
-    const uint16_t port_;         // 服务器监听端口
-    int listen_fd_{};             // 监听 socket 文件描述符
-    const bool linger_;           // 是否启用 linger 模式
-    EpollManager epoll_manager_;  // epoll 管理器
-    ThreadPool thread_pool_;      // 线程池
-    Logger* logger_;              // 日志
+    const uint16_t port_;  // 服务器监听端口
+    int listen_fd_{};      // 监听 socket 文件描述符
+    const bool linger_;    // 是否启用 linger 模式
 
-    std::unordered_map<int, Address> clients_;  // 缓存客户端地址
-    std::mutex clients_mutex_;
+    std::unordered_map<int, std::shared_ptr<Connection>> connections_;  // 客户端连接列表
+    std::mutex connections_mutex_;
 
-    std::unordered_set<int> close_list_;                    // 客户端关闭列表
-    std::atomic_flag close_list_dirty_ = ATOMIC_FLAG_INIT;  // 标记关闭列表是否被修改
-    std::mutex close_mutex_;
-
+    Logger* logger_;                                         // 日志
+    EpollManager epoll_manager_;                             // epoll 管理器
+    ThreadPool thread_pool_;                                 // 线程池
     StaticFile static_file_{logger_, "./static", "/files"};  // 静态文件目录
 
     // 创建并配置 socket，绑定端口并监听连接
@@ -58,26 +52,8 @@ private:
     // 处理新客户端连接
     void handleNewConnection();
 
-    // 请求客户端断开
-    void requestCloseClient(int client_fd);
-
-    // 处理关闭列表
-    void processCloseList();
-
-    // 处理客户端断开
-    void disconnectClient(int client_fd);
-
-    // 处理客户端发送的数据
-    void handleClientData(int client_fd);
-
-    // 处理 POST 请求，读取请求体并返回内容
-    [[nodiscard]] std::string handlePOST(const std::string& request) const;
-
     // 分发任务
     void dispatchClient(int client_fd);
-
-    // 获取客户端信息
-    [[nodiscard]] const Address& getClientInfo(int client_fd);
 
     // 设置为非阻塞模式
     static int setNonBlocking(int socket_fd);

@@ -3,21 +3,17 @@
 #include <array>
 #include <cerrno>
 #include <cstdint>
-#include <cstring>
 #include <format>
+#include <memory>
 #include <mutex>
 
 #include <fcntl.h>
 #include <netinet/in.h>
 #include <sys/epoll.h>
-#include <sys/eventfd.h>
 #include <sys/socket.h>
-#include <sys/types.h>
 #include <unistd.h>
 
-#include "core/address.h"
-#include "core/http_response.h"
-#include "utils/form_parser.h"
+#include "core/connection.h"
 #include "utils/logger.h"
 
 constexpr int MAX_EVENTS = 1024;  // epoll 支持的最大事件数
@@ -26,8 +22,8 @@ inline sockaddr* toSockaddr(sockaddr_in* addr) {
     return reinterpret_cast<sockaddr*>(addr);  // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
 }
 
-Server::Server(const uint16_t port, const bool linger, const size_t thread_count, Logger* logger)
-    : port_(port), linger_(linger), thread_pool_(thread_count, logger), logger_(logger) {
+Server::Server(const uint16_t port, const bool linger, Logger* logger, const size_t thread_count)
+    : port_(port), linger_(linger), logger_(logger), thread_pool_(thread_count, logger) {
     setupSocket();
     setupEpoll();
 }
@@ -92,79 +88,10 @@ void Server::run() {
         for (int i = 0; i < event_count; ++i) {
             if (const int client_fd = events.at(i).data.fd; client_fd == listen_fd_) {
                 handleNewConnection();
-            } else if (client_fd == epoll_manager_.getEventFd()) {
-                processCloseList();
             } else {
                 dispatchClient(client_fd);
             }
         }
-    }
-}
-
-void Server::processCloseList() {
-    epoll_manager_.clearNotify();
-    close_list_dirty_.clear();
-
-    while (true) {
-        int client_fd{};
-        {
-            std::lock_guard lock(close_mutex_);
-            if (close_list_.empty()) {
-                break;
-            }
-            client_fd = *close_list_.begin();
-        }
-
-        disconnectClient(client_fd);
-
-        std::lock_guard lock(close_mutex_);
-        close_list_.erase(client_fd);
-    }
-}
-
-void Server::disconnectClient(const int client_fd) {
-    Address info;
-    {
-        std::lock_guard lock(clients_mutex_);
-        const auto clients_iter = clients_.find(client_fd);
-        if (clients_iter == clients_.end()) {
-            return;
-        }
-        info = clients_iter->second;
-    }
-
-    // 从 epoll 中移除 fd，防止后续再触发事件
-    epoll_manager_.delFd(client_fd);
-
-    if (close(client_fd) == -1) {
-        logger_->log(LogLevel::WARNING, info, std::format("close failed: {}", std::strerror(errno)));
-    }
-
-    {
-        std::lock_guard lock(clients_mutex_);
-        clients_.erase(client_fd);
-    }
-
-    logger_->log(LogLevel::INFO, info, "Client disconnected.");
-}
-
-void Server::requestCloseClient(const int client_fd) {
-    const Address info = getClientInfo(client_fd);
-    bool inserted = false;
-
-    {
-        std::lock_guard lock(close_mutex_);
-        inserted = close_list_.insert(client_fd).second;
-    }
-
-    if (inserted) {
-        logger_->log(LogLevel::DEBUG, info, "Added to close list.");
-
-        if (!close_list_dirty_.test_and_set()) {
-            epoll_manager_.notify();
-        }
-    } else {
-        logger_->log(LogLevel::DEBUG, info, "Already in close list, ignoring duplicate.");
     }
 }
 
@@ -184,133 +111,46 @@ void Server::handleNewConnection() {
         // 设置客户端 socket 为非阻塞
         setNonBlocking(client_fd);
 
-        if (linger_) {
-            linger so_linger{};
-            so_linger.l_onoff = 1;
-            so_linger.l_linger = 1;
-            setsockopt(client_fd, SOL_SOCKET, SO_LINGER, &so_linger, sizeof(so_linger));
+        const auto conn =
+            std::make_shared<Connection>(client_fd, client_addr, &epoll_manager_, logger_, &static_file_, linger_);
+
+        if (!conn) {
+            logger_->log(LogLevel::ERROR, "Failed to create connection object.");
+            close(client_fd);
+            continue;
         }
 
-        // 添加客户端 socket 到 epoll 中，监听读写事件
-        epoll_manager_.addFd(client_fd, EPOLLIN);
+        conn->setCloseRequestCallback([this](const int close_fd) {
+            std::lock_guard lock(connections_mutex_);
+            connections_.erase(close_fd);
+        });
 
-        const Address info(client_addr, client_fd);
-
-        {
-            std::lock_guard lock(clients_mutex_);
-            clients_[client_fd] = info;
-        }
-
-        logger_->log(LogLevel::INFO, info, "New client connected.");
+        std::lock_guard lock(connections_mutex_);
+        connections_[client_fd] = conn;
     }
-}
-
-void Server::handleClientData(const int client_fd) {
-    {
-        std::scoped_lock lock(clients_mutex_, close_mutex_);
-        if (!clients_.contains(client_fd) || close_list_.contains(client_fd)) {
-            return;
-        }
-    }
-
-    constexpr std::size_t buffer_size = 4096;
-    std::array<char, buffer_size> buffer{};  // 用于存储从客户端接收到的数据
-    const ssize_t bytes_read = read(client_fd, buffer.data(), buffer.size());
-    const Address info = getClientInfo(client_fd);
-
-    if (bytes_read == 0) {
-        // 如果读到 0 字节，说明客户端关闭连接
-        requestCloseClient(client_fd);
-        return;
-    }
-
-    if (bytes_read < 0) {
-        if (errno == EBADF) {
-            logger_->log(LogLevel::WARNING, info, "Read on invalid fd: already closed elsewhere.");
-        } else if (errno != EAGAIN && errno != EWOULDBLOCK) {
-            logger_->log(LogLevel::ERROR, info, std::format("Read error: {}", strerror(errno)));
-            requestCloseClient(client_fd);
-        }
-        return;
-    }
-
-    // 将读取的内容转换为 std::string 以便处理
-    std::string request(buffer.data(), bytes_read);
-    std::string method;
-    std::string path;
-
-    // 提取 HTTP 请求方法和请求路径
-    if (const size_t method_end = request.find(' '); method_end != std::string::npos) {
-        method = request.substr(0, method_end);
-
-        const size_t path_start = method_end + 1;
-        if (const size_t path_end = request.find(' ', path_start); path_end != std::string::npos) {
-            path = request.substr(path_start, path_end - path_start);
-        }
-    }
-
-    std::string response;
-
-    // 根据方法和路径进行不同的处理
-    if (method == "GET") {
-        logger_->log(LogLevel::DEBUG, info, std::format("Handling GET for path: {}", path));
-        response = static_file_.serve(path, info);
-    } else if (method == "POST") {
-        logger_->log(LogLevel::DEBUG, info, std::format("Handling POST for path: {}", path));
-        response = handlePOST(request);
-    } else {
-        logger_->log(LogLevel::WARNING, info, std::format("Unsupported method: {} on path: {}", method, path));
-        constexpr int error_code = 405;
-        response = HttpResponse::buildErrorResponse(error_code);
-    }
-
-    write(client_fd, response.c_str(), response.size());
-    requestCloseClient(client_fd);
-}
-
-std::string Server::handlePOST(const std::string& request) const {
-    const std::string delimiter = "\r\n\r\n";
-    const size_t body_pos = request.find(delimiter);
-    if (body_pos == std::string::npos) {
-        constexpr int error_code = 400;
-        return HttpResponse::buildErrorResponse(error_code);
-    }
-
-    std::string body = request.substr(body_pos + delimiter.size());
-
-    logger_->log(LogLevel::DEBUG, std::format("POST body: {}", body));
-
-    auto form_data = FormPasser::parse(body);
-    if (form_data.empty()) {
-        return "No form data received.";
-    }
-
-    std::string result = "Received POST data:\n";
-    for (const auto& [key, value] : form_data) {
-        result += std::format("    {} = {}\n", key, value);
-    }
-
-    return HttpResponse{}.setStatus("200 OK").setContentType("text/plain; charset=UTF-8").setBody(result).build();
 }
 
 void Server::dispatchClient(const int client_fd) {
+    std::shared_ptr<Connection> conn;
+    {
+        std::lock_guard lock(connections_mutex_);
+        const auto iter = connections_.find(client_fd);
+        if (iter == connections_.end()) {
+            return;
+        }
+        conn = iter->second;
+    }
+
+    if (!conn) {
+        logger_->log(LogLevel::WARNING, "Connection is null, cannot dispatch.");
+        return;
+    }
+
     try {
-        thread_pool_.enqueue([this, client_fd] { handleClientData(client_fd); });
+        thread_pool_.enqueue([conn] { conn->handle(); });
     } catch (const std::exception& e) {
-        logger_->log(LogLevel::ERROR, getClientInfo(client_fd), std::format("Failed to enqueue task: {}", e.what()));
-        requestCloseClient(client_fd);
+        logger_->log(LogLevel::ERROR, conn->info(), std::format("Failed to enqueue task: {}", e.what()));
     }
-}
-
-const Address& Server::getClientInfo(const int client_fd) {
-    static const Address unknown;
-
-    std::lock_guard lock(clients_mutex_);
-
-    if (clients_.contains(client_fd)) {
-        return clients_[client_fd];
-    }
-    return unknown;
 }
 
 int Server::setNonBlocking(const int socket_fd) {
