@@ -34,8 +34,6 @@ Server::Server(const uint16_t port, const bool linger, const size_t thread_count
 
 Server::~Server() {
     close(listen_fd_);
-    close(epoll_fd_);
-    close(event_fd_);
     logger_->log(LogLevel::INFO, "Server resources cleaned up and shutting down.");
     logger_->logDivider("Server close");
 }
@@ -75,32 +73,14 @@ void Server::setupSocket() {
     logger_->log(LogLevel::INFO, std::format("Listening on port {}", port_));
 }
 
-void Server::setupEpoll() {
-    epoll_fd_ = epoll_create1(0);
-    if (epoll_fd_ == -1) {
-        logger_->log(LogLevel::ERROR, "Failed to create epoll instance.");
-        throw std::runtime_error("Failed to create epoll instance.");
+void Server::setupEpoll() const {
+    try {
+        epoll_manager_.addFd(listen_fd_, EPOLLIN | EPOLLET);
+        logger_->log(LogLevel::INFO, "Epoll instance created and listening socket added.");
+    } catch (const std::exception& e) {
+        logger_->log(LogLevel::ERROR, std::format("Epoll setup failed: {}", e.what()));
+        throw;
     }
-
-    // 添加监听 socket 到 epoll 监听列表
-    epoll_event event{};
-    event.events = EPOLLIN | EPOLLET;
-    event.data.fd = listen_fd_;
-    epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, listen_fd_, &event);
-
-    // 创建并注册 eventfd 用于唤醒 epoll_wait
-    event_fd_ = eventfd(0, EFD_NONBLOCK);
-    if (event_fd_ == -1) {
-        logger_->log(LogLevel::ERROR, "Failed to create eventfd.");
-        throw std::runtime_error("Failed to create eventfd.");
-    }
-
-    epoll_event wakeup_event{};
-    wakeup_event.events = EPOLLIN;
-    wakeup_event.data.fd = event_fd_;
-    epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, event_fd_, &wakeup_event);
-
-    logger_->log(LogLevel::INFO, "Epoll instance created and listening socket added.");
 }
 
 void Server::run() {
@@ -108,14 +88,11 @@ void Server::run() {
 
     std::array<epoll_event, MAX_EVENTS> events{};
     while (true) {
-        const int event_count = epoll_wait(epoll_fd_, events.data(), MAX_EVENTS, -1);
+        const int event_count = epoll_manager_.wait(events, -1);
         for (int i = 0; i < event_count; ++i) {
             if (const int client_fd = events.at(i).data.fd; client_fd == listen_fd_) {
                 handleNewConnection();
-            } else if (client_fd == event_fd_) {
-                // 读取 eventfd 数据，清空状态
-                uint64_t dummy{};
-                read(event_fd_, &dummy, sizeof(dummy));
+            } else if (client_fd == epoll_manager_.getEventFd()) {
                 processCloseList();
             } else {
                 dispatchClient(client_fd);
@@ -125,6 +102,7 @@ void Server::run() {
 }
 
 void Server::processCloseList() {
+    epoll_manager_.clearNotify();
     close_list_dirty_.clear();
 
     while (true) {
@@ -156,9 +134,7 @@ void Server::disconnectClient(const int client_fd) {
     }
 
     // 从 epoll 中移除 fd，防止后续再触发事件
-    if (epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, client_fd, nullptr) == -1) {
-        logger_->log(LogLevel::WARNING, info, std::format("epoll_ctl DEL failed: {}", std::strerror(errno)));
-    }
+    epoll_manager_.delFd(client_fd);
 
     if (close(client_fd) == -1) {
         logger_->log(LogLevel::WARNING, info, std::format("close failed: {}", std::strerror(errno)));
@@ -185,10 +161,7 @@ void Server::requestCloseClient(const int client_fd) {
         logger_->log(LogLevel::DEBUG, info, "Added to close list.");
 
         if (!close_list_dirty_.test_and_set()) {
-            constexpr uint64_t notify = 1;
-            if (write(event_fd_, &notify, sizeof(notify)) != sizeof(notify)) {
-                logger_->log(LogLevel::WARNING, info, "Failed to wake epoll via eventfd.");
-            }
+            epoll_manager_.notify();
         }
     } else {
         logger_->log(LogLevel::DEBUG, info, "Already in close list, ignoring duplicate.");
@@ -219,10 +192,7 @@ void Server::handleNewConnection() {
         }
 
         // 添加客户端 socket 到 epoll 中，监听读写事件
-        epoll_event event{};
-        event.events = EPOLLIN;
-        event.data.fd = client_fd;
-        epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, client_fd, &event);
+        epoll_manager_.addFd(client_fd, EPOLLIN);
 
         const Address info(client_addr, client_fd);
 

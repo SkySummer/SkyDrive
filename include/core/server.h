@@ -8,8 +8,9 @@
 #include <unordered_map>
 #include <unordered_set>
 
-#include "static_file.h"
-#include "threadpool.h"
+#include "core/epoll_manager.h"
+#include "core/static_file.h"
+#include "core/threadpool.h"
 
 // 前向声明
 class Address;
@@ -32,13 +33,12 @@ public:
     void run();
 
 private:
-    const uint16_t port_;     // 服务器监听端口
-    int listen_fd_{};         // 监听 socket 文件描述符
-    int epoll_fd_{};          // epoll 实例的文件描述符
-    int event_fd_{};          // 用于唤醒 epoll_wait
-    const bool linger_;       // 是否启用 linger 模式
-    ThreadPool thread_pool_;  // 线程池
-    Logger* logger_;          // 日志
+    const uint16_t port_;         // 服务器监听端口
+    int listen_fd_{};             // 监听 socket 文件描述符
+    const bool linger_;           // 是否启用 linger 模式
+    EpollManager epoll_manager_;  // epoll 管理器
+    ThreadPool thread_pool_;      // 线程池
+    Logger* logger_;              // 日志
 
     std::unordered_map<int, Address> clients_;  // 缓存客户端地址
     std::mutex clients_mutex_;
@@ -53,7 +53,7 @@ private:
     void setupSocket();
 
     // 创建 epoll 实例并添加监听 socket
-    void setupEpoll();
+    void setupEpoll() const;
 
     // 处理新客户端连接
     void handleNewConnection();
