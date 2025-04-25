@@ -111,8 +111,8 @@ void Server::handleNewConnection() {
         // 设置客户端 socket 为非阻塞
         setNonBlocking(client_fd);
 
-        const auto conn =
-            std::make_shared<Connection>(client_fd, client_addr, &epoll_manager_, logger_, &static_file_, linger_);
+        const auto conn = std::make_shared<Connection>(client_fd, client_addr, &epoll_manager_, logger_, &static_file_,
+                                                       &user_manager_, linger_);
 
         if (!conn) {
             logger_->log(LogLevel::ERROR, "Failed to create connection object.");

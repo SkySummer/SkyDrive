@@ -9,6 +9,7 @@
 #include "core/epoll_manager.h"
 #include "core/static_file.h"
 #include "core/threadpool.h"
+#include "user/user_manager.h"
 
 // 前向声明
 class Connection;
@@ -42,6 +43,7 @@ private:
     EpollManager epoll_manager_;                             // epoll 管理器
     ThreadPool thread_pool_;                                 // 线程池
     StaticFile static_file_{logger_, "./static", "/files"};  // 静态文件目录
+    UserManager user_manager_{logger_};                      // 用户管理器
 
     // 创建并配置 socket，绑定端口并监听连接
     void setupSocket();

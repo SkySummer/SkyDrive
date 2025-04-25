@@ -12,11 +12,12 @@
 class EpollManager;
 class Logger;
 class StaticFile;
+class UserManager;
 
 class Connection {
 public:
     Connection(int client_fd, const sockaddr_in& addr, EpollManager* epoll, Logger* logger, StaticFile* static_file,
-               bool linger = false);
+               UserManager* user_manager, bool linger = false);
     ~Connection();
 
     Connection(const Connection&) = delete;
@@ -37,6 +38,7 @@ private:
     EpollManager* epoll_manager_;
     Logger* logger_;
     StaticFile* static_file_;
+    UserManager* user_manager_;
 
     std::atomic<bool> closed_{false};  // 是否关闭连接
 
@@ -45,7 +47,7 @@ private:
     void readAndHandleRequest() const;
 
     [[nodiscard]] std::string handleGetRequest(const std::string& path) const;
-    [[nodiscard]] static std::string handlePostRequest(const std::string& path, const std::string& body);
+    [[nodiscard]] std::string handlePostRequest(const std::string& path, const std::string& body) const;
 
     void closeConnection();
     void applyLinger(bool flag) const;

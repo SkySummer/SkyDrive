@@ -10,12 +10,18 @@
 
 #include "core/epoll_manager.h"
 #include "core/static_file.h"
-#include "utils/form_parser.h"
+#include "user/user_manager.h"
+#include "utils/http_form_data.h"
 #include "utils/logger.h"
 
 Connection::Connection(const int client_fd, const sockaddr_in& addr, EpollManager* epoll, Logger* logger,
-                       StaticFile* static_file, const bool linger)
-    : client_fd_(client_fd), info_(addr, client_fd), epoll_manager_(epoll), logger_(logger), static_file_(static_file) {
+                       StaticFile* static_file, UserManager* user_manager, const bool linger)
+    : client_fd_(client_fd),
+      info_(addr, client_fd),
+      epoll_manager_(epoll),
+      logger_(logger),
+      static_file_(static_file),
+      user_manager_(user_manager) {
     // 设置 linger 选项
     applyLinger(linger);
 
@@ -124,19 +130,22 @@ std::string Connection::handleGetRequest(const std::string& path) const {
     return static_file_->serve(path, info_);
 }
 
-std::string Connection::handlePostRequest(const std::string& path, const std::string& body) {
-    auto form_data = FormPasser::parse(body);
-    if (form_data.empty()) {
+std::string Connection::handlePostRequest(const std::string& path, const std::string& body) const {
+    if (HttpFormData(body).empty()) {
         constexpr int error_code = 400;
         return HttpResponse::buildErrorResponse(error_code, "No form data received.");
     }
 
-    std::string result = std::format("Received POST data from {}:\n", path);
-    for (const auto& [key, value] : form_data) {
-        result += std::format("    {} = {}\n", key, value);
+    if (path == "/login") {
+        return user_manager_->loginUser(body);
     }
 
-    return HttpResponse{}.setStatus("200 OK").setContentType("text/plain; charset=UTF-8").setBody(result).build();
+    if (path == "/register") {
+        return user_manager_->registerUser(body);
+    }
+
+    constexpr int error_code = 405;
+    return HttpResponse::buildErrorResponse(error_code);
 }
 
 void Connection::closeConnection() {
