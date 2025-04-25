@@ -72,6 +72,10 @@ std::string HttpResponse::buildErrorResponse(const int code, const std::string& 
             status = "Bad Request";
             message = "Your request is invalid or malformed.";
             break;
+        case 401:
+            status = "Unauthorized";
+            message = "You need to authenticate yourself to access this resource.";
+            break;
         case 403:
             status = "Forbidden";
             message = "You don't have permission to access this page.";
