@@ -77,3 +77,41 @@ std::string UserManager::loginUser(const std::string& body) {
         .setBody("Login successful.")
         .build();
 }
+
+std::string UserManager::changePassword(const std::string& body) {
+    const auto form_data = HttpFormData(body);
+    if (auto invalid = form_data.check({"username", "old_password", "new_password", "confirm_password"})) {
+        return *invalid;
+    }
+
+    const std::string username = form_data.get("username").value_or("");
+    const std::string old_password = form_data.get("old_password").value_or("");
+    const std::string new_password = form_data.get("new_password").value_or("");
+
+    if (new_password != form_data.get("confirm_password").value_or("-")) {
+        return HttpResponse::buildAlertResponse("两次输入的新密码不一致，请重新输入。");
+    }
+
+    const std::string salt = Hash::randomSalt();
+
+    bool changed = false;
+    {
+        std::lock_guard lock(users_mutex_);
+        if (const auto iter = users_.find(username); iter != users_.end() && iter->second.password == Hash::saltedHash(iter->second.salt, old_password)) {
+            iter->second = {.salt = salt, .password = Hash::saltedHash(salt, new_password)};
+            changed = true;
+        }
+    }
+
+    if (!changed) {
+        return HttpResponse::buildAlertResponse("用户名或旧密码错误，请重新输入。");
+    }
+
+    logger_->log(LogLevel::INFO, std::format("User password changed successfully: {}", username));
+
+    return HttpResponse{}
+        .setStatus("200 OK")
+        .setContentType("text/plain; charset=UTF-8")
+        .setBody("Password changed successfully.")
+        .build();
+}

@@ -16,6 +16,8 @@ public:
 
     std::string loginUser(const std::string& body);
 
+    std::string changePassword(const std::string& body);
+
 private:
     struct UserInfo {
         std::string salt;

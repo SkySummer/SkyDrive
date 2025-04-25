@@ -144,6 +144,10 @@ std::string Connection::handlePostRequest(const std::string& path, const std::st
         return user_manager_->registerUser(body);
     }
 
+    if (path == "/change_password") {
+        return user_manager_->changePassword(body);
+    }
+
     constexpr int error_code = 405;
     return HttpResponse::buildErrorResponse(error_code);
 }
