@@ -18,6 +18,7 @@ public:
 
 private:
     struct UserInfo {
+        std::string salt;
         std::string password;
     };
 

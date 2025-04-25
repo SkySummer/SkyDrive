@@ -18,6 +18,8 @@ public:
 
     [[nodiscard]] static std::string buildErrorResponse(int code, const std::string& tips = "");
 
+    [[nodiscard]] static std::string buildAlertResponse(const std::string& message);
+
 private:
     std::string status_ = "200 OK";
     std::string body_;

@@ -3,6 +3,7 @@
 #include <format>
 
 #include "core/http_response.h"
+#include "utils/hash.h"
 #include "utils/http_form_data.h"
 #include "utils/logger.h"
 
@@ -20,22 +21,23 @@ std::string UserManager::registerUser(const std::string& body) {
     const std::string password = form_data.get("password").value_or("");
 
     if (password != form_data.get("confirm_password").value_or("-")) {
-        constexpr int error_code = 400;
-        return HttpResponse::buildErrorResponse(error_code, "Passwords do not match.");
+        return HttpResponse::buildAlertResponse("两次输入的密码不一致，请重新输入。");
     }
+
+    const std::string salt = Hash::randomSalt();
+    const std::string hashed = Hash::saltedHash(salt, password);
 
     bool exists = false;
     {
         std::lock_guard lock(users_mutex_);
         exists = users_.contains(username);
         if (!exists) {
-            users_[username] = {.password = password};
+            users_[username] = {.salt = salt, .password = hashed};
         }
     }
 
     if (exists) {
-        constexpr int error_code = 400;
-        return HttpResponse::buildErrorResponse(error_code, "Username already exists.");
+        return HttpResponse::buildAlertResponse("用户名已存在，请重新输入。");
     }
 
     logger_->log(LogLevel::INFO, std::format("User registered successfully: {}", username));
@@ -60,12 +62,11 @@ std::string UserManager::loginUser(const std::string& body) {
     {
         std::lock_guard lock(users_mutex_);
         const auto iter = users_.find(username);
-        checked = iter != users_.end() && iter->second.password == password;
+        checked = iter != users_.end() && iter->second.password == Hash::saltedHash(users_[username].salt, password);
     }
 
     if (!checked) {
-        constexpr int error_code = 401;
-        return HttpResponse::buildErrorResponse(error_code, "Invalid username or password.");
+        return HttpResponse::buildAlertResponse("用户名或密码错误，请重新输入。");
     }
 
     logger_->log(LogLevel::INFO, std::format("User logged in successfully: {}", username));

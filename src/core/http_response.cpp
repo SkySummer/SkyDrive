@@ -113,3 +113,13 @@ std::string HttpResponse::buildErrorResponse(const int code, const std::string& 
         .setBody(std::format(ERROR_HTML_TEMPLATE, code, status, message))
         .build();
 }
+
+std::string HttpResponse::buildAlertResponse(const std::string& message) {
+    const std::string html = std::format(
+        "<!DOCTYPE html><html><head><meta charset='UTF-8'>"
+        "<script>alert('{}'); window.history.back();</script>"
+        "</head><body></body></html>",
+        message);
+
+    return HttpResponse{}.setStatus("200 OK").setContentType("text/html; charset=UTF-8").setBody(html).build();
+}
