@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>表单测试 | C++ WebServer</title>
+    <title>登录 | SkyDrive</title>
     <style>
         body {
             font-family: 'Segoe UI', sans-serif;
@@ -36,8 +36,7 @@
         }
 
         input[type="text"],
-        input[type="email"],
-        textarea {
+        input[type="password"] {
             font-family: inherit;
             width: 100%;
             max-width: 100%;
@@ -77,22 +76,19 @@
 </head>
 
 <body>
-    <h1>📬 POST 表单测试</h1>
+    <h1>🔐 用户登录</h1>
 
-    <form method="POST" action="/form">
-        <label for="name">姓名：</label>
-        <input type="text" id="name" name="name" required>
+    <form method="POST" action="/login">
+        <label for="username">用户名：</label>
+        <input type="text" id="username" name="username" required>
 
-        <label for="email">邮箱：</label>
-        <input type="email" id="email" name="email" required>
+        <label for="password">密码：</label>
+        <input type="password" id="password" name="password" required>
 
-        <label for="message">留言：</label>
-        <textarea id="message" name="message" rows="5" required></textarea>
-
-        <input type="submit" value="提交">
+        <input type="submit" value="登录">
     </form>
 
-    <div class="status">欢迎使用 C++ WebServer 进行表单测试。<br>
+    <div class="status">
         <a href="/" style="color: inherit; text-decoration: underline;">返回首页</a>
     </div>
 </body>

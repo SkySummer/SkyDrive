@@ -1,22 +1,79 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>C++ WebServer</title>
+    <title>SkyDrive</title>
     <style>
         body {
             font-family: 'Segoe UI', sans-serif;
             background: #f8f9fa;
             color: #343a40;
+            margin: 0;
+            padding: 0;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem 2rem;
+            background-color: #fff;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        }
+
+        .title {
+            font-size: 1.5rem;
+            color: #007bff;
+            font-weight: bold;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 1rem;
+        }
+
+        .btn {
+            padding: 0.5rem 1rem;
+            font-size: 1rem;
+            border-radius: 5px;
+            text-decoration: none;
+            cursor: pointer;
+            transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+        }
+
+        .btn-login {
+            background-color: #007bff;
+            color: #fff;
+            border: 2px solid #007bff;
+        }
+
+        .btn-login:hover {
+            background-color: #0056b3;
+            border: 2px solid #0056b3;
+        }
+
+        .btn-register {
+            background-color: transparent;
+            color: #007bff;
+            border: 2px solid #007bff;
+        }
+
+        .btn-register:hover {
+            background-color: #007bff;
+            color: #fff;
+        }
+
+        main {
             text-align: center;
-            padding: 4rem 1rem;
+            padding: 6rem 1rem 4rem;
         }
 
         h1 {
             font-size: 3rem;
             color: #007bff;
+            margin-bottom: 1rem;
         }
 
         p {
@@ -25,7 +82,7 @@
         }
 
         .status {
-            margin-top: 2rem;
+            margin-top: 3rem;
             font-size: 0.95rem;
             color: #6c757d;
         }
@@ -33,12 +90,23 @@
 </head>
 
 <body>
-    <h1>🚀 Welcome to C++ WebServer!</h1>
-    <p>This is the default index page.</p>
-    <p>You can add static files under the <code>./static</code> directory.</p>
-    <div class="status">
-        Server is running.
-    </div>
+    <header>
+        <div class="title">SkyDrive</div>
+        <div class="btn-group">
+            <a href="/register.html" class="btn btn-register">注册</a>
+            <a href="/login.html" class="btn btn-login">登录</a>
+        </div>
+    </header>
+
+    <main>
+        <h1>☁️ 欢迎使用 SkyDrive</h1>
+        <p>这是基于 C++ 构建的简洁高效的网盘系统。</p>
+        <p>你可以上传、下载和管理你的文件。</p>
+
+        <div class="status">
+            SkyDrive 服务运行中。
+        </div>
+    </main>
 </body>
 
 </html>
