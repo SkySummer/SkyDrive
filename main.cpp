@@ -33,9 +33,9 @@ int main() {
 
         ThreadPool thread_pool(config.get("thread_count", 4), &logger);
 
-        const std::string static_dir = config.get("static_dir", std::string("./static"));
-        const std::string drive_dir = config.get("drive_dir", std::string("/files"));
-        StaticFile static_file(&logger, static_dir, drive_dir);
+        const std::string static_dir = config.get("static_dir", std::string("static"));
+        const std::string drive_dir = config.get("drive_dir", std::string("files"));
+        StaticFile static_file(root_path, static_dir, drive_dir, &logger);
 
         const std::string user_file = config.get("user_file", std::string("users.dat"));
         const std::filesystem::path user_path = weakly_canonical(root_path / "data" / user_file);

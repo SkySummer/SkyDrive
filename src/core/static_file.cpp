@@ -87,18 +87,18 @@ namespace {
     }
 }  // namespace
 
-StaticFile::StaticFile(Logger* logger, const std::string_view static_dir, std::string drive_dir)
-    : drive_dir_(std::move(drive_dir)), logger_(logger) {
-#ifdef ROOT_PATH
-    std::filesystem::path root_path = STR(ROOT_PATH);
-#else
-    std::filesystem::path root_path = std::filesystem::current_path();
-#endif
-
-    root_ = weakly_canonical(root_path / static_dir);
+StaticFile::StaticFile(const std::filesystem::path& root, const std::string& static_dir, std::string drive_dir,
+                       Logger* logger)
+    : static_path_(weakly_canonical(root / static_dir)),
+      templates_path_(weakly_canonical(root / "templates")),
+      drive_url_(std::move(drive_dir)),
+      drive_path_(weakly_canonical(root / "data" / drive_url_)),
+      logger_(logger) {
     logger_->log(LogLevel::INFO, "StaticFile initialized");
-    logger_->log(LogLevel::INFO, std::format("-- root: {}", root_.string()));
-    logger_->log(LogLevel::INFO, std::format("-- drive: {}", drive_dir_));
+    logger_->log(LogLevel::INFO, std::format("-- staticfile_path: {}", static_path_.string()));
+    logger_->log(LogLevel::INFO, std::format("-- templates_path: {}", templates_path_.string()));
+    logger_->log(LogLevel::INFO, std::format("-- drive_url: {}", drive_url_));
+    logger_->log(LogLevel::INFO, std::format("-- drive_path: {}", drive_path_.string()));
 }
 
 std::string StaticFile::serve(const std::string& path, const Address& info) const {
@@ -114,40 +114,32 @@ std::string StaticFile::serve(const std::string& path, const Address& info) cons
         return HttpResponse::buildErrorResponse(error_code);
     }
 
-    if (is_directory(full_path)) {
-        // 只允许访问 files 及其子目录
-        if (decoded_path == drive_dir_ || decoded_path.starts_with(drive_dir_ + '/')) {
-            // 如果请求的路径没有以斜杠结尾，则重定向到带斜杠的路径
-            if (!path.ends_with('/')) {
-                std::string corrected_url = path + '/';
-                logger_->log(
-                    LogLevel::INFO, info,
-                    std::format("Redirecting to directory with trailing slash: {} -> {}", path, corrected_url));
+    if (isDrivePath(decoded_path) && is_directory(full_path)) {
+        // 如果请求的路径没有以斜杠结尾，则重定向到带斜杠的路径
+        if (!path.ends_with('/')) {
+            std::string corrected_url = path + '/';
+            logger_->log(LogLevel::INFO, info,
+                         std::format("Redirecting to directory with trailing slash: {} -> {}", path, corrected_url));
 
-                return HttpResponse{}
-                    .setStatus("301 Moved Permanently")
-                    .addHeader("Location", corrected_url)
-                    .setContentType("text/plain; charset=UTF-8")
-                    .setBody("Redirecting to " + corrected_url)
-                    .build();
-            }
-
-            // 获取相对于 files 的路径
-            std::string virtual_path = path.substr(std::string(drive_dir_).length());
-            virtual_path = ensureTrailingSlash(virtual_path);
-
-            // 生成网盘目录列表
-            logger_->log(LogLevel::DEBUG, info, std::format("Serving directory listing for: {}", full_path.string()));
             return HttpResponse{}
-                .setStatus("200 OK")
-                .setContentType("text/html; charset=UTF-8")
-                .setBody(generateDirectoryListing(full_path, virtual_path))
+                .setStatus("301 Moved Permanently")
+                .addHeader("Location", corrected_url)
+                .setContentType("text/plain; charset=UTF-8")
+                .setBody("Redirecting to " + corrected_url)
                 .build();
         }
 
-        logger_->log(LogLevel::DEBUG, info, std::format("Requested path is a directory: {}", full_path.string()));
-        constexpr int error_code = 404;
-        return HttpResponse::buildErrorResponse(error_code);
+        // 获取相对于 files 的路径
+        std::string virtual_path = path.substr(std::string(drive_url_).length() + 1);
+        virtual_path = ensureTrailingSlash(virtual_path);
+
+        // 生成网盘目录列表
+        logger_->log(LogLevel::DEBUG, info, std::format("Serving directory listing for: {}", full_path.string()));
+        return HttpResponse{}
+            .setStatus("200 OK")
+            .setContentType("text/html; charset=UTF-8")
+            .setBody(generateDirectoryListing(full_path, virtual_path))
+            .build();
     }
 
     if (auto cached = readFromCache(full_path, info)) {
@@ -177,12 +169,12 @@ std::string StaticFile::serve(const std::string& path, const Address& info) cons
     return builder.build();
 }
 
-std::string StaticFile::generateDirectoryListing(const std::filesystem::path& dir_path,
+std::string StaticFile::generateDirectoryListing(const std::filesystem::path& path,
                                                  const std::string& request_path) const {
     std::vector<std::filesystem::directory_entry> directories;
     std::vector<std::filesystem::directory_entry> files;
 
-    for (const auto& entry : std::filesystem::directory_iterator(dir_path)) {
+    for (const auto& entry : std::filesystem::directory_iterator(path)) {
         if (entry.is_directory()) {
             directories.emplace_back(entry);
         } else {
@@ -209,7 +201,7 @@ std::string StaticFile::generateDirectoryListing(const std::filesystem::path& di
         </tr>)";
     }
 
-    std::string base_path = drive_dir_ + request_path;
+    std::string base_path = '/' + drive_url_ + request_path;
     base_path = ensureTrailingSlash(base_path);
 
     // 目录
@@ -246,12 +238,7 @@ std::string StaticFile::generateDirectoryListing(const std::filesystem::path& di
     }
 
     // 读取文件内容
-#ifdef ROOT_PATH
-    std::filesystem::path root_path = STR(ROOT_PATH);
-#else
-    std::filesystem::path root_path = std::filesystem::current_path();
-#endif
-    std::ifstream file(root_path / "static/templates/directory_listing.html");
+    std::ifstream file(templates_path_ / "directory_listing.html");
     if (!file.is_open()) {
         logger_->log(LogLevel::ERROR, "Template file missing: directory_listing.html");
         return "<h1>Template missing</h1>";
@@ -269,12 +256,52 @@ std::string StaticFile::generateDirectoryListing(const std::filesystem::path& di
 }
 
 bool StaticFile::isPathSafe(const std::filesystem::path& path) const {
-    return weakly_canonical(path).string().starts_with(root_.string());
+    return weakly_canonical(path).string().starts_with(static_path_.string()) ||
+           weakly_canonical(path).string().starts_with(drive_path_.string());
+}
+
+bool StaticFile::isDrivePath(const std::string& path) const {
+    return path == '/' + drive_url_ || path.starts_with('/' + drive_url_ + '/');
 }
 
 std::filesystem::path StaticFile::getFilePath(const std::string& path) const {
-    const std::string clean_path = path == "/" ? "index.html" : path.substr(1);
-    return root_ / clean_path;
+    if (isDrivePath(path)) {
+        if (path == '/' + drive_url_ || path == '/' + drive_url_ + '/') {
+            // 网盘根目录
+            return weakly_canonical(drive_path_);
+        }
+
+        // 网盘路径
+        const std::string drive_path = path.substr(drive_url_.length() + 2);
+        return weakly_canonical(drive_path_ / drive_path);
+    }
+
+    static const std::unordered_map<std::string, std::string> redirect_map = {
+        {"/", "index.html"},
+        {"/index", "index.html"},
+        {"/index.htm", "index.html"},
+        {"/index.html", "index.html"},
+        {"/default.htm", "index.html"},
+        {"/default.html", "index.html"},
+        {"/login", "login.html"},
+        {"/login.htm", "login.html"},
+        {"/login.html", "login.html"},
+        {"/register", "register.html"},
+        {"/register.htm", "register.html"},
+        {"/register.html", "register.html"},
+        {"/change_password", "change_password.html"},
+        {"/change_password.htm", "change_password.html"},
+        {"/change_password.html", "change_password.html"},
+    };
+
+    // 重定向路径
+    if (const auto redirect_iter = redirect_map.find(path); redirect_iter != redirect_map.end()) {
+        return weakly_canonical(static_path_ / redirect_iter->second);
+    }
+
+    // 静态文件路径
+    const std::string clean_path = path.substr(1);
+    return weakly_canonical(static_path_ / clean_path);
 }
 
 std::optional<HttpResponse> StaticFile::readFromCache(const std::filesystem::path& path, const Address& info) const {
