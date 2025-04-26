@@ -37,7 +37,9 @@ int main() {
         const std::string drive_dir = config.get("drive_dir", std::string("/files"));
         StaticFile static_file(&logger, static_dir, drive_dir);
 
-        UserManager user_manager(&logger);
+        const std::string user_file = config.get("user_file", std::string("users.dat"));
+        const std::filesystem::path user_path = weakly_canonical(root_path / "data" / user_file);
+        UserManager user_manager(user_path, &logger);
 
         const uint16_t port = config.get("port", 8080);
         const bool linger = config.get("linger", true);

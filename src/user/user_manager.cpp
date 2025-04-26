@@ -1,14 +1,37 @@
 #include "user/user_manager.h"
 
+#include <cstddef>
 #include <format>
+#include <mutex>
+#include <sstream>
+#include <string>
+#include <utility>
+#include <vector>
 
 #include "core/http_response.h"
+#include "utils/base64.h"
 #include "utils/hash.h"
 #include "utils/http_form_data.h"
 #include "utils/logger.h"
 
-UserManager::UserManager(Logger* logger) : logger_(logger) {
-    logger_->log(LogLevel::INFO, "UserManager initialized");
+#define STR_HELPER(x) #x      // NOLINT(cppcoreguidelines-macro-usage)
+#define STR(x) STR_HELPER(x)  // NOLINT(cppcoreguidelines-macro-usage)
+
+namespace {
+    std::string formatUserCount(size_t user_count) {
+        return std::format("{} {}", user_count, user_count == 1 ? "user" : "users");
+    }
+}  // namespace
+
+UserManager::UserManager(std::filesystem::path path, Logger* logger) : path_(std::move(path)), logger_(logger) {
+    const size_t user_count = loadUsers();
+    logger_->log(LogLevel::INFO, std::format("UserManager initialized with {}", formatUserCount(user_count)));
+    logger_->log(LogLevel::INFO, std::format("-- user_file: {}", path_.string()));
+}
+
+UserManager::~UserManager() {
+    saveUsers();
+    logger_->log(LogLevel::INFO, "UserManager saved and destroyed");
 }
 
 std::string UserManager::registerUser(const std::string& body) {
@@ -41,6 +64,7 @@ std::string UserManager::registerUser(const std::string& body) {
     }
 
     logger_->log(LogLevel::INFO, std::format("User registered successfully: {}", username));
+    saveUsers();
 
     return HttpResponse{}
         .setStatus("200 OK")
@@ -109,10 +133,65 @@ std::string UserManager::changePassword(const std::string& body) {
     }
 
     logger_->log(LogLevel::INFO, std::format("User password changed successfully: {}", username));
+    saveUsers();
 
     return HttpResponse{}
         .setStatus("200 OK")
         .setContentType("text/plain; charset=UTF-8")
         .setBody("Password changed successfully.")
         .build();
+}
+
+size_t UserManager::loadUsers() {
+    std::ifstream file(path_);
+    if (!file.is_open()) {
+        if (exists(path_)) {
+            logger_->log(LogLevel::ERROR, "User data file exists but cannot be opened. Check permissions.");
+        } else {
+            logger_->log(LogLevel::INFO, "User data file not found. Starting with empty user database.");
+        }
+        return 0;
+    }
+
+    std::string line;
+    std::lock_guard lock(users_mutex_);
+    while (std::getline(file, line)) {
+        std::istringstream iss(line);
+        std::string part;
+        std::vector<std::string> parts;
+
+        while (std::getline(iss, part, '|')) {
+            parts.push_back(part);
+        }
+
+        if (parts.size() != 3) {
+            logger_->log(LogLevel::ERROR, std::format("Invalid user data: {}", line));
+            continue;
+        }
+
+        const std::string username = Base64::decode(parts[0]);
+        const std::string salt = Base64::decode(parts[1]);
+        const std::string password = Base64::decode(parts[2]);
+
+        users_[username] = {.salt = salt, .password = password};
+    }
+
+    return users_.size();
+}
+
+void UserManager::saveUsers() {
+    std::ofstream file(path_, std::ios::trunc);
+    if (!file.is_open()) {
+        logger_->log(LogLevel::ERROR, std::format("Failed to open user file for writing: {}", path_.string()));
+        return;
+    }
+
+    std::lock_guard lock(users_mutex_);
+    for (const auto& [username, user_info] : users_) {
+        const std::string encoded_username = Base64::encode(username);
+        const std::string encoded_salt = Base64::encode(user_info.salt);
+        const std::string encoded_password = Base64::encode(user_info.password);
+
+        file << encoded_username << "|" << encoded_salt << "|" << encoded_password << "\n";
+    }
 }
