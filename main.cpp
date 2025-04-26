@@ -7,6 +7,7 @@
 #include "user/user_manager.h"
 #include "utils/config_parser.h"
 #include "utils/logger.h"
+#include "utils/signal_handler.h"
 
 #define STR_HELPER(x) #x      // NOLINT(cppcoreguidelines-macro-usage)
 #define STR(x) STR_HELPER(x)  // NOLINT(cppcoreguidelines-macro-usage)
@@ -21,6 +22,8 @@ std::filesystem::path getRootPath() {
 
 int main() {
     try {
+        auto& running = SignalHandler::setup();
+
         auto root_path = getRootPath();
 
         const ConfigParser config(root_path / "config.ini");
@@ -38,7 +41,7 @@ int main() {
 
         const uint16_t port = config.get("port", 8080);
         const bool linger = config.get("linger", true);
-        Server server(port, linger, &logger, &thread_pool, &static_file, &user_manager);
+        Server server(port, linger, running, &logger, &thread_pool, &static_file, &user_manager);
         server.run();
     } catch (const std::exception& e) {
         std::cerr << "Server crashed: " << e.what() << '\n';

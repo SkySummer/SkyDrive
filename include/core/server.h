@@ -18,8 +18,8 @@ class UserManager;
 class Server {
 public:
     // 构造函数：初始化服务器并指定监听端口
-    Server(uint16_t port, bool linger, Logger* logger, ThreadPool* thread_pool, StaticFile* static_file,
-           UserManager* user_manager);
+    Server(uint16_t port, bool linger, std::atomic<bool>& running, Logger* logger, ThreadPool* thread_pool,
+           StaticFile* static_file, UserManager* user_manager);
 
     // 析构函数：关闭 socket 与 epoll 相关资源
     ~Server();
@@ -37,6 +37,7 @@ private:
     int listen_fd_{};             // 监听 socket 文件描述符
     const bool linger_;           // 是否启用 linger 模式
     EpollManager epoll_manager_;  // epoll 管理器
+    std::atomic<bool>& running_;  // 运行状态
 
     std::unordered_map<int, std::shared_ptr<Connection>> connections_;  // 客户端连接列表
     std::mutex connections_mutex_;

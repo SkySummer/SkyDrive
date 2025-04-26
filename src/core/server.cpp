@@ -23,10 +23,11 @@ inline sockaddr* toSockaddr(sockaddr_in* addr) {
     return reinterpret_cast<sockaddr*>(addr);  // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
 }
 
-Server::Server(const uint16_t port, const bool linger, Logger* logger, ThreadPool* thread_pool, StaticFile* static_file,
-               UserManager* user_manager)
+Server::Server(const uint16_t port, const bool linger, std::atomic<bool>& running, Logger* logger,
+               ThreadPool* thread_pool, StaticFile* static_file, UserManager* user_manager)
     : port_(port),
       linger_(linger),
+      running_(running),
       logger_(logger),
       thread_pool_(thread_pool),
       static_file_(static_file),
@@ -39,7 +40,7 @@ Server::Server(const uint16_t port, const bool linger, Logger* logger, ThreadPoo
 Server::~Server() {
     close(listen_fd_);
     logger_->logDivider("Server close");
-    logger_->log(LogLevel::INFO, "Server resources cleaned up and shutting down.");
+    logger_->log(LogLevel::INFO, "Cleaning up server resources");
 }
 
 void Server::setupSocket() {
@@ -91,7 +92,7 @@ void Server::run() {
     logger_->logDivider("Server start");
 
     std::array<epoll_event, MAX_EVENTS> events{};
-    while (true) {
+    while (running_) {
         const int event_count = epoll_manager_.wait(events, -1);
         for (int i = 0; i < event_count; ++i) {
             if (const int client_fd = events.at(i).data.fd; client_fd == listen_fd_) {
