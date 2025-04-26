@@ -49,7 +49,7 @@ void ThreadPool::workerLoop(size_t thread_id) {
 
             // 如果已经停止且没有任务，退出线程
             if (stop_ && tasks_.empty()) {
-                logger_->log(LogLevel::DEBUG, std::format("    Thread {} exited", thread_id));
+                logger_->log(LogLevel::DEBUG, std::format("-- Thread {} exited", thread_id));
                 return;
             }
 

@@ -97,8 +97,8 @@ StaticFile::StaticFile(Logger* logger, const std::string_view static_dir, std::s
 
     root_ = weakly_canonical(root_path / static_dir);
     logger_->log(LogLevel::INFO, "StaticFile initialized");
-    logger_->log(LogLevel::INFO, std::format("    root: {}", root_.string()));
-    logger_->log(LogLevel::INFO, std::format("    drive: {}", drive_dir_));
+    logger_->log(LogLevel::INFO, std::format("-- root: {}", root_.string()));
+    logger_->log(LogLevel::INFO, std::format("-- drive: {}", drive_dir_));
 }
 
 std::string StaticFile::serve(const std::string& path, const Address& info) const {
