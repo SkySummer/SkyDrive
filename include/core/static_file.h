@@ -20,14 +20,14 @@ class Logger;
 
 class StaticFile {
 public:
-    explicit StaticFile(Logger* logger, std::string_view relative_path = "./static", std::string prefix = "/files");
+    explicit StaticFile(Logger* logger, std::string_view static_dir = "./static", std::string drive_dir = "/files");
 
     [[nodiscard]] std::string serve(const std::string& path, const Address& info) const;
 
 private:
-    std::filesystem::path root_;      // 静态文件根目录
-    const std::string drive_prefix_;  // 网盘文件目录
-    Logger* logger_;                  // 日志
+    std::filesystem::path root_;   // 静态文件根目录
+    const std::string drive_dir_;  // 网盘文件目录
+    Logger* logger_;               // 日志
 
     mutable std::unordered_map<std::filesystem::path, CacheEntry> cache_;
     mutable std::mutex cache_mutex_;

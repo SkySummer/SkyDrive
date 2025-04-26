@@ -87,16 +87,18 @@ namespace {
     }
 }  // namespace
 
-StaticFile::StaticFile(Logger* logger, const std::string_view relative_path, std::string prefix)
-    : drive_prefix_(std::move(prefix)), logger_(logger) {
+StaticFile::StaticFile(Logger* logger, const std::string_view static_dir, std::string drive_dir)
+    : drive_dir_(std::move(drive_dir)), logger_(logger) {
 #ifdef ROOT_PATH
     std::filesystem::path root_path = STR(ROOT_PATH);
 #else
     std::filesystem::path root_path = std::filesystem::current_path();
 #endif
 
-    root_ = weakly_canonical(root_path / relative_path);
-    logger_->log(LogLevel::INFO, std::format("StaticFile initialized. Root: {}", root_.string()));
+    root_ = weakly_canonical(root_path / static_dir);
+    logger_->log(LogLevel::INFO, "StaticFile initialized");
+    logger_->log(LogLevel::INFO, std::format("    root: {}", root_.string()));
+    logger_->log(LogLevel::INFO, std::format("    drive: {}", drive_dir_));
 }
 
 std::string StaticFile::serve(const std::string& path, const Address& info) const {
@@ -114,7 +116,7 @@ std::string StaticFile::serve(const std::string& path, const Address& info) cons
 
     if (is_directory(full_path)) {
         // 只允许访问 files 及其子目录
-        if (decoded_path == drive_prefix_ || decoded_path.starts_with(drive_prefix_ + '/')) {
+        if (decoded_path == drive_dir_ || decoded_path.starts_with(drive_dir_ + '/')) {
             // 如果请求的路径没有以斜杠结尾，则重定向到带斜杠的路径
             if (!path.ends_with('/')) {
                 std::string corrected_url = path + '/';
@@ -131,7 +133,7 @@ std::string StaticFile::serve(const std::string& path, const Address& info) cons
             }
 
             // 获取相对于 files 的路径
-            std::string virtual_path = path.substr(std::string(drive_prefix_).length());
+            std::string virtual_path = path.substr(std::string(drive_dir_).length());
             virtual_path = ensureTrailingSlash(virtual_path);
 
             // 生成网盘目录列表
@@ -207,7 +209,7 @@ std::string StaticFile::generateDirectoryListing(const std::filesystem::path& di
         </tr>)";
     }
 
-    std::string base_path = drive_prefix_ + request_path;
+    std::string base_path = drive_dir_ + request_path;
     base_path = ensureTrailingSlash(base_path);
 
     // 目录

@@ -8,7 +8,7 @@
 #include "utils/logger.h"
 
 UserManager::UserManager(Logger* logger) : logger_(logger) {
-    logger_->log(LogLevel::INFO, "UserManager initialized.");
+    logger_->log(LogLevel::INFO, "UserManager initialized");
 }
 
 std::string UserManager::registerUser(const std::string& body) {
@@ -97,7 +97,8 @@ std::string UserManager::changePassword(const std::string& body) {
     bool changed = false;
     {
         std::lock_guard lock(users_mutex_);
-        if (const auto iter = users_.find(username); iter != users_.end() && iter->second.password == Hash::saltedHash(iter->second.salt, old_password)) {
+        if (const auto iter = users_.find(username);
+            iter != users_.end() && iter->second.password == Hash::saltedHash(iter->second.salt, old_password)) {
             iter->second = {.salt = salt, .password = Hash::saltedHash(salt, new_password)};
             changed = true;
         }

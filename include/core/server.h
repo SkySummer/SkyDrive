@@ -6,19 +6,20 @@
 #include <mutex>
 #include <unordered_map>
 
+#include "core/connection.h"
 #include "core/epoll_manager.h"
-#include "core/static_file.h"
-#include "core/threadpool.h"
-#include "user/user_manager.h"
 
 // 前向声明
-class Connection;
 class Logger;
+class ThreadPool;
+class StaticFile;
+class UserManager;
 
 class Server {
 public:
     // 构造函数：初始化服务器并指定监听端口
-    explicit Server(uint16_t port, bool linger, Logger* logger, size_t thread_count);
+    Server(uint16_t port, bool linger, Logger* logger, ThreadPool* thread_pool, StaticFile* static_file,
+           UserManager* user_manager);
 
     // 析构函数：关闭 socket 与 epoll 相关资源
     ~Server();
@@ -32,18 +33,18 @@ public:
     void run();
 
 private:
-    const uint16_t port_;  // 服务器监听端口
-    int listen_fd_{};      // 监听 socket 文件描述符
-    const bool linger_;    // 是否启用 linger 模式
+    const uint16_t port_;         // 服务器监听端口
+    int listen_fd_{};             // 监听 socket 文件描述符
+    const bool linger_;           // 是否启用 linger 模式
+    EpollManager epoll_manager_;  // epoll 管理器
 
     std::unordered_map<int, std::shared_ptr<Connection>> connections_;  // 客户端连接列表
     std::mutex connections_mutex_;
 
-    Logger* logger_;                                         // 日志
-    EpollManager epoll_manager_;                             // epoll 管理器
-    ThreadPool thread_pool_;                                 // 线程池
-    StaticFile static_file_{logger_, "./static", "/files"};  // 静态文件目录
-    UserManager user_manager_{logger_};                      // 用户管理器
+    Logger* logger_;             // 日志
+    ThreadPool* thread_pool_;    // 线程池
+    StaticFile* static_file_;    // 静态文件目录
+    UserManager* user_manager_;  // 用户管理器
 
     // 创建并配置 socket，绑定端口并监听连接
     void setupSocket();

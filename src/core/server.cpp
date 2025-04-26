@@ -14,6 +14,7 @@
 #include <unistd.h>
 
 #include "core/connection.h"
+#include "core/threadpool.h"
 #include "utils/logger.h"
 
 constexpr int MAX_EVENTS = 1024;  // epoll 支持的最大事件数
@@ -22,16 +23,23 @@ inline sockaddr* toSockaddr(sockaddr_in* addr) {
     return reinterpret_cast<sockaddr*>(addr);  // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
 }
 
-Server::Server(const uint16_t port, const bool linger, Logger* logger, const size_t thread_count)
-    : port_(port), linger_(linger), logger_(logger), thread_pool_(thread_count, logger) {
+Server::Server(const uint16_t port, const bool linger, Logger* logger, ThreadPool* thread_pool, StaticFile* static_file,
+               UserManager* user_manager)
+    : port_(port),
+      linger_(linger),
+      logger_(logger),
+      thread_pool_(thread_pool),
+      static_file_(static_file),
+      user_manager_(user_manager) {
+    logger->log(LogLevel::INFO, std::format("Linger mode {}", linger_ ? "enabled" : "disabled"));
     setupSocket();
     setupEpoll();
 }
 
 Server::~Server() {
     close(listen_fd_);
-    logger_->log(LogLevel::INFO, "Server resources cleaned up and shutting down.");
     logger_->logDivider("Server close");
+    logger_->log(LogLevel::INFO, "Server resources cleaned up and shutting down.");
 }
 
 void Server::setupSocket() {
@@ -66,13 +74,13 @@ void Server::setupSocket() {
     // 设置监听 socket 为非阻塞
     setNonBlocking(listen_fd_);
 
-    logger_->log(LogLevel::INFO, std::format("Listening on port {}", port_));
+    logger_->log(LogLevel::INFO, std::format("Server listening on port {}", port_));
 }
 
 void Server::setupEpoll() const {
     try {
         epoll_manager_.addFd(listen_fd_, EPOLLIN | EPOLLET);
-        logger_->log(LogLevel::INFO, "Epoll instance created and listening socket added.");
+        logger_->log(LogLevel::INFO, "EpollManager initialized and listening socket registered");
     } catch (const std::exception& e) {
         logger_->log(LogLevel::ERROR, std::format("Epoll setup failed: {}", e.what()));
         throw;
@@ -111,8 +119,8 @@ void Server::handleNewConnection() {
         // 设置客户端 socket 为非阻塞
         setNonBlocking(client_fd);
 
-        const auto conn = std::make_shared<Connection>(client_fd, client_addr, &epoll_manager_, logger_, &static_file_,
-                                                       &user_manager_, linger_);
+        const auto conn = std::make_shared<Connection>(client_fd, client_addr, &epoll_manager_, logger_, static_file_,
+                                                       user_manager_, linger_);
 
         if (!conn) {
             logger_->log(LogLevel::ERROR, "Failed to create connection object.");
@@ -147,7 +155,7 @@ void Server::dispatchClient(const int client_fd) {
     }
 
     try {
-        thread_pool_.enqueue([conn] { conn->handle(); });
+        thread_pool_->enqueue([conn] { conn->handle(); });
     } catch (const std::exception& e) {
         logger_->log(LogLevel::ERROR, conn->info(), std::format("Failed to enqueue task: {}", e.what()));
     }
