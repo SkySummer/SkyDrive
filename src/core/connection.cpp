@@ -14,7 +14,6 @@
 #include "core/http_request.h"
 #include "core/static_file.h"
 #include "user/user_manager.h"
-#include "utils/http_form_data.h"
 #include "utils/logger.h"
 
 Connection::Connection(const int client_fd, const sockaddr_in& addr, EpollManager* epoll, Logger* logger,
@@ -140,23 +139,22 @@ std::string Connection::handleGetRequest(const HttpRequest& request) const {
 }
 
 std::string Connection::handlePostRequest(const HttpRequest& request) const {
-    if (HttpFormData(request.body()).empty()) {
-        constexpr int error_code = 400;
-        return HttpResponse::buildErrorResponse(error_code, "No form data received.");
-    }
-
     const std::string& path = request.path();
 
     if (path == "/login") {
-        return user_manager_->loginUser(request.body());
+        return user_manager_->loginUser(request);
     }
 
     if (path == "/register") {
-        return user_manager_->registerUser(request.body());
+        return user_manager_->registerUser(request);
     }
 
     if (path == "/change_password") {
-        return user_manager_->changePassword(request.body());
+        return user_manager_->changePassword(request);
+    }
+
+    if (path == "/logout") {
+        return user_manager_->logoutUser(request);
     }
 
     constexpr int error_code = 405;

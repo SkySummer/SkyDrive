@@ -8,10 +8,12 @@
 
 // 前向声明
 class Logger;
+class SessionManager;
+class HttpRequest;
 
 class UserManager {
 public:
-    explicit UserManager(std::filesystem::path path, Logger* logger);
+    UserManager(std::filesystem::path path, Logger* logger, SessionManager* session_manager);
     ~UserManager();
 
     UserManager(const UserManager&) = delete;
@@ -19,11 +21,13 @@ public:
     UserManager(UserManager&&) = delete;
     UserManager& operator=(UserManager&&) = delete;
 
-    std::string registerUser(const std::string& body);
+    std::string registerUser(const HttpRequest& request);
 
-    std::string loginUser(const std::string& body);
+    std::string loginUser(const HttpRequest& request);
 
-    std::string changePassword(const std::string& body);
+    std::string changePassword(const HttpRequest& request);
+
+    std::string logoutUser(const HttpRequest& request) const;
 
 private:
     size_t loadUsers();
@@ -36,6 +40,7 @@ private:
 
     std::filesystem::path path_;
     Logger* logger_;
+    SessionManager* session_manager_;
     std::unordered_map<std::string, UserInfo> users_;
     std::mutex users_mutex_;
 };

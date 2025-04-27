@@ -8,8 +8,11 @@
 #include <utility>
 #include <vector>
 
+#include "core/http_request.h"
 #include "core/http_response.h"
+#include "user/session_manager.h"
 #include "utils/base64.h"
+#include "utils/cookie_parser.h"
 #include "utils/hash.h"
 #include "utils/http_form_data.h"
 #include "utils/logger.h"
@@ -23,7 +26,8 @@ namespace {
     }
 }  // namespace
 
-UserManager::UserManager(std::filesystem::path path, Logger* logger) : path_(std::move(path)), logger_(logger) {
+UserManager::UserManager(std::filesystem::path path, Logger* logger, SessionManager* session_manager)
+    : path_(std::move(path)), logger_(logger), session_manager_(session_manager) {
     const size_t user_count = loadUsers();
     logger_->log(LogLevel::INFO, std::format("UserManager initialized with {}", formatUserCount(user_count)));
     logger_->log(LogLevel::INFO, std::format("-- user_file: {}", path_.string()));
@@ -34,8 +38,8 @@ UserManager::~UserManager() {
     logger_->log(LogLevel::INFO, "UserManager saved and destroyed");
 }
 
-std::string UserManager::registerUser(const std::string& body) {
-    const auto form_data = HttpFormData(body);
+std::string UserManager::registerUser(const HttpRequest& request) {
+    const auto form_data = HttpFormData(request.body());
     if (auto invalid = form_data.check({"username", "password", "confirm_password"})) {
         return *invalid;
     }
@@ -66,15 +70,18 @@ std::string UserManager::registerUser(const std::string& body) {
     logger_->log(LogLevel::INFO, std::format("User registered successfully: {}", username));
     saveUsers();
 
+    auto session_id = session_manager_->createSession(username);
+
     return HttpResponse{}
         .setStatus("200 OK")
+        .addHeader("Set-Cookie", std::format("session_id={}; Path=/; HttpOnly", session_id))
         .setContentType("text/plain; charset=UTF-8")
         .setBody("Registration successful.")
         .build();
 }
 
-std::string UserManager::loginUser(const std::string& body) {
-    const auto form_data = HttpFormData(body);
+std::string UserManager::loginUser(const HttpRequest& request) {
+    const auto form_data = HttpFormData(request.body());
     if (auto invalid = form_data.check({"username", "password"})) {
         return *invalid;
     }
@@ -95,15 +102,18 @@ std::string UserManager::loginUser(const std::string& body) {
 
     logger_->log(LogLevel::INFO, std::format("User logged in successfully: {}", username));
 
+    auto session_id = session_manager_->createSession(username);
+
     return HttpResponse{}
         .setStatus("200 OK")
+        .addHeader("Set-Cookie", std::format("session_id={}; Path=/; HttpOnly", session_id))
         .setContentType("text/plain; charset=UTF-8")
         .setBody("Login successful.")
         .build();
 }
 
-std::string UserManager::changePassword(const std::string& body) {
-    const auto form_data = HttpFormData(body);
+std::string UserManager::changePassword(const HttpRequest& request) {
+    const auto form_data = HttpFormData(request.body());
     if (auto invalid = form_data.check({"username", "old_password", "new_password", "confirm_password"})) {
         return *invalid;
     }
@@ -139,6 +149,26 @@ std::string UserManager::changePassword(const std::string& body) {
         .setStatus("200 OK")
         .setContentType("text/plain; charset=UTF-8")
         .setBody("Password changed successfully.")
+        .build();
+}
+
+std::string UserManager::logoutUser(const HttpRequest& request) const {
+    const auto session_id = CookieParser::get(request, "session_id");
+    if (!session_id) {
+        return HttpResponse::buildAlertResponse("未登录或会话已过期，请重新登录。");
+    }
+    if (!session_manager_->getUsername(*session_id)) {
+        return HttpResponse::buildAlertResponse("未登录或会话已过期，请重新登录。");
+    }
+
+    session_manager_->removeSession(*session_id);
+    logger_->log(LogLevel::INFO, std::format("User logged out. Session id: {}", *session_id));
+
+    return HttpResponse{}
+        .setStatus("200 OK")
+        .addHeader("Set-Cookie", "session_id=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT")
+        .setContentType("text/plain; charset=UTF-8")
+        .setBody("Logout successful.")
         .build();
 }
 

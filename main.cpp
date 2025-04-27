@@ -4,6 +4,7 @@
 #include "core/server.h"
 #include "core/static_file.h"
 #include "core/threadpool.h"
+#include "user/session_manager.h"
 #include "user/user_manager.h"
 #include "utils/config_parser.h"
 #include "utils/logger.h"
@@ -39,7 +40,8 @@ int main() {
 
         const std::string user_file = config.get("user_file", std::string("users.dat"));
         const std::filesystem::path user_path = weakly_canonical(root_path / "data" / user_file);
-        UserManager user_manager(user_path, &logger);
+        SessionManager session_manager;
+        UserManager user_manager(user_path, &logger, &session_manager);
 
         const uint16_t port = config.get("port", 8080);
         const bool linger = config.get("linger", true);
