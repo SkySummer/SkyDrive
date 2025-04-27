@@ -1,14 +1,99 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 
 <head>
     <meta charset="UTF-8">
     <title>Index of {{path}}</title>
     <style>
         body {
-            font-family: 'Segoe UI', sans-serif;
+            font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
             background-color: #f8f9fa;
             color: #343a40;
+            margin: 0;
+            padding: 0;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem 2rem;
+            background-color: #fff;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        }
+
+        .title {
+            font-size: 1.5rem;
+            color: #007bff;
+            font-weight: bold;
+            user-select: none;
+        }
+
+        .title a {
+            text-decoration: none;
+            color: inherit;
+        }
+
+        .title a:hover {
+            text-decoration: none;
+        }
+
+        .user-info {
+            font-size: 1rem;
+            color: #343a40;
+            margin-right: 1.5rem;
+            white-space: nowrap;
+        }
+
+        .btn-group {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .btn {
+            padding: 0.5rem 1rem;
+            font-size: 1rem;
+            border-radius: 5px;
+            text-decoration: none;
+            cursor: pointer;
+            transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+            user-select: none;
+        }
+
+        .btn:hover {
+            text-decoration: none;
+        }
+
+        .btn-upload {
+            background-color: #007bff;
+            color: #fff;
+            border: 2px solid #007bff;
+        }
+
+        .btn-upload:hover {
+            background-color: #0056b3;
+            border: 2px solid #0056b3;
+        }
+
+        form {
+            display: inline;
+            margin: 0;
+            padding: 0;
+        }
+
+        button {
+            background: none;
+            border: none;
+            color: #dc3545;
+            cursor: pointer;
+            font: inherit;
+            text-decoration: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        main {
             padding: 2rem 3rem;
         }
 
@@ -52,45 +137,37 @@
         .icon {
             margin-right: 0.5rem;
         }
-
-        .top-bar {
-            text-align: right;
-            margin-bottom: 1rem;
-        }
-
-        .upload-btn {
-            display: inline-block;
-            padding: 0.6rem 1.2rem;
-            font-size: 1rem;
-            background-color: #007bff;
-            border: none;
-            color: white;
-            border-radius: 5px;
-            cursor: pointer;
-            text-decoration: none;
-        }
-
-        .upload-btn:hover {
-            background-color: #0056b3;
-            text-decoration: none;
-        }
     </style>
 </head>
 
 <body>
-    <div class="top-bar">
-        <a class="upload-btn" href="/upload">Upload</a>
-    </div>
-    <h1>📁 Index of {{path}}</h1>
-    <table>
-        <tr>
-            <th>Name</th>
-            <th>Size</th>
-            <th>Last Modified</th>
-            <th>Action</th>
-        </tr>
-        {{entries}}
-    </table>
+    <header>
+        <div class="title">
+            <a href="/" class="title-link">SkyDrive</a>
+        </div>
+        <div class="btn-group">
+            <div class="user-info">
+                <span>欢迎，{{username}}</span> &nbsp;|&nbsp;
+                <form action="/logout" method="post" style="display: inline;">
+                    <button type="submit">退出</button>
+                </form>
+            </div>
+            <a href="/upload" class="btn btn-upload">上传文件</a>
+        </div>
+    </header>
+
+    <main>
+        <h1>📁 Index of {{path}}</h1>
+        <table>
+            <tr>
+                <th>名称</th>
+                <th>大小</th>
+                <th>最后修改时间</th>
+                <th>操作</th>
+            </tr>
+            {{entries}}
+        </table>
+    </main>
 </body>
 
 </html>
