@@ -17,13 +17,14 @@ struct CacheEntry {
 // 前向声明
 class Address;
 class Logger;
+class HttpRequest;
 
 class StaticFile {
 public:
     explicit StaticFile(const std::filesystem::path& root, const std::string& static_dir, std::string drive_dir,
                         Logger* logger);
 
-    [[nodiscard]] std::string serve(const std::string& path, const Address& info) const;
+    [[nodiscard]] std::string serve(const HttpRequest& request, const Address& info) const;
 
 private:
     const std::filesystem::path static_path_;     // 静态文件目录

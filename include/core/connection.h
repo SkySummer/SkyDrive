@@ -13,6 +13,7 @@ class EpollManager;
 class Logger;
 class StaticFile;
 class UserManager;
+class HttpRequest;
 
 class Connection {
 public:
@@ -46,8 +47,9 @@ private:
 
     void readAndHandleRequest() const;
 
-    [[nodiscard]] std::string handleGetRequest(const std::string& path) const;
-    [[nodiscard]] std::string handlePostRequest(const std::string& path, const std::string& body) const;
+    [[nodiscard]] std::string handleRequest(const HttpRequest& request) const;
+    [[nodiscard]] std::string handleGetRequest(const HttpRequest& request) const;
+    [[nodiscard]] std::string handlePostRequest(const HttpRequest& request) const;
 
     void closeConnection();
     void applyLinger(bool flag) const;

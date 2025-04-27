@@ -12,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#include "core/http_request.h"
 #include "core/http_response.h"
 #include "utils/logger.h"
 #include "utils/mime_type.h"
@@ -101,7 +102,8 @@ StaticFile::StaticFile(const std::filesystem::path& root, const std::string& sta
     logger_->log(LogLevel::INFO, std::format("-- drive_path: {}", drive_path_.string()));
 }
 
-std::string StaticFile::serve(const std::string& path, const Address& info) const {
+std::string StaticFile::serve(const HttpRequest& request, const Address& info) const {
+    const std::string& path = request.path();
     const std::string decoded_path = Url::decode(path);
     std::filesystem::path full_path = getFilePath(decoded_path);
 

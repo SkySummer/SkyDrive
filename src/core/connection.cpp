@@ -1,7 +1,9 @@
 #include "core/connection.h"
 
+#include <cstddef>
 #include <cstring>
 #include <format>
+#include <stdexcept>
 #include <string>
 #include <utility>
 
@@ -9,6 +11,7 @@
 #include <unistd.h>
 
 #include "core/epoll_manager.h"
+#include "core/http_request.h"
 #include "core/static_file.h"
 #include "user/user_manager.h"
 #include "utils/http_form_data.h"
@@ -81,41 +84,28 @@ void Connection::readAndHandleRequest() const {
         return;
     }
 
-    // 将读取的内容转换为 std::string 以便处理
-    const std::string request(buffer.data(), bytes_read);
-    std::string method;
-    std::string path;
-
-    // 提取 HTTP 请求方法和请求路径
-    if (const size_t method_end = request.find(' '); method_end != std::string::npos) {
-        method = request.substr(0, method_end);
-
-        const size_t path_start = method_end + 1;
-        if (const size_t path_end = request.find(' ', path_start); path_end != std::string::npos) {
-            path = request.substr(path_start, path_end - path_start);
-        }
-    }
-
     std::string response;
 
-    // 根据方法和路径进行不同的处理
-    if (method == "GET") {
-        logger_->log(LogLevel::DEBUG, info_, std::format("Handling GET for path: {}", path));
-        response = handleGetRequest(path);
-    } else if (method == "POST") {
-        logger_->log(LogLevel::DEBUG, info_, std::format("Handling POST for path: {}", path));
+    try {
+        // 将读取的内容转换为 std::string 以便处理
+        const std::string request(buffer.data(), bytes_read);
 
-        static constexpr std::string_view delimiter = "\r\n\r\n";
-        if (const size_t body_pos = request.find(delimiter); body_pos == std::string::npos) {
-            constexpr int error_code = 400;
-            response = HttpResponse::buildErrorResponse(error_code);
-        } else {
-            const std::string body = request.substr(body_pos + delimiter.size());
-            response = handlePostRequest(path, body);
-        }
-    } else {
-        logger_->log(LogLevel::DEBUG, info_, std::format("Unsupported method: {} on path: {}", method, path));
-        constexpr int error_code = 405;
+        const HttpRequest http_request(request);
+
+        response = handleRequest(http_request);
+    } catch (const std::invalid_argument& e) {
+        logger_->log(LogLevel::INFO, info_, std::format("Invalid HTTP request: {}", e.what()));
+        constexpr int error_code = 400;
+        response = HttpResponse::buildErrorResponse(error_code);
+    } catch (const std::exception& e) {
+        logger_->log(LogLevel::ERROR, info_, std::format("Exception: {}", e.what()));
+        constexpr int error_code = 500;
+        response = HttpResponse::buildErrorResponse(error_code);
+    }
+
+    if (response.empty()) {
+        logger_->log(LogLevel::ERROR, info_, "Empty response generated.");
+        constexpr int error_code = 500;
         response = HttpResponse::buildErrorResponse(error_code);
     }
 
@@ -126,26 +116,47 @@ void Connection::readAndHandleRequest() const {
     }
 }
 
-std::string Connection::handleGetRequest(const std::string& path) const {
-    return static_file_->serve(path, info_);
+std::string Connection::handleRequest(const HttpRequest& request) const {
+    const std::string& method = request.method();
+    const std::string& path = request.path();
+
+    logger_->log(LogLevel::DEBUG, info_, std::format("Handling {} for path: {}", method, path));
+
+    if (method == "GET") {
+        return handleGetRequest(request);
+    }
+
+    if (method == "POST") {
+        return handlePostRequest(request);
+    }
+
+    logger_->log(LogLevel::DEBUG, info_, std::format("Unsupported method: {} on path: {}", method, path));
+    constexpr int error_code = 405;
+    return HttpResponse::buildErrorResponse(error_code);
 }
 
-std::string Connection::handlePostRequest(const std::string& path, const std::string& body) const {
-    if (HttpFormData(body).empty()) {
+std::string Connection::handleGetRequest(const HttpRequest& request) const {
+    return static_file_->serve(request, info_);
+}
+
+std::string Connection::handlePostRequest(const HttpRequest& request) const {
+    if (HttpFormData(request.body()).empty()) {
         constexpr int error_code = 400;
         return HttpResponse::buildErrorResponse(error_code, "No form data received.");
     }
 
+    const std::string& path = request.path();
+
     if (path == "/login") {
-        return user_manager_->loginUser(body);
+        return user_manager_->loginUser(request.body());
     }
 
     if (path == "/register") {
-        return user_manager_->registerUser(body);
+        return user_manager_->registerUser(request.body());
     }
 
     if (path == "/change_password") {
-        return user_manager_->changePassword(body);
+        return user_manager_->changePassword(request.body());
     }
 
     constexpr int error_code = 405;
