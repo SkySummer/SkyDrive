@@ -34,13 +34,14 @@ int main() {
 
         ThreadPool thread_pool(config.get("thread_count", 4), &logger);
 
+        SessionManager session_manager;
+
         const std::string static_dir = config.get("static_dir", std::string("static"));
         const std::string drive_dir = config.get("drive_dir", std::string("files"));
-        StaticFile static_file(root_path, static_dir, drive_dir, &logger);
+        StaticFile static_file(root_path, static_dir, drive_dir, &logger, &session_manager);
 
         const std::string user_file = config.get("user_file", std::string("users.dat"));
         const std::filesystem::path user_path = weakly_canonical(root_path / "data" / user_file);
-        SessionManager session_manager;
         UserManager user_manager(user_path, &logger, &session_manager, drive_dir);
 
         const uint16_t port = config.get("port", 8080);

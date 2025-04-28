@@ -18,11 +18,12 @@ struct CacheEntry {
 class Address;
 class Logger;
 class HttpRequest;
+class SessionManager;
 
 class StaticFile {
 public:
     explicit StaticFile(const std::filesystem::path& root, const std::string& static_dir, std::string drive_dir,
-                        Logger* logger);
+                        Logger* logger, SessionManager* session_manager);
 
     [[nodiscard]] HttpResponse serve(const HttpRequest& request, const Address& info) const;
 
@@ -36,9 +37,12 @@ private:
     const std::string drive_url_;                 // 网盘文件目录 URL
     const std::filesystem::path drive_path_;      // 网盘文件目录
     Logger* logger_;                              // 日志
+    SessionManager* session_manager_;             // 会话管理器
 
     mutable std::unordered_map<std::filesystem::path, CacheEntry> cache_;
     mutable std::mutex cache_mutex_;
+
+    [[nodiscard]] HttpResponse serveRaw(const HttpRequest& request, const Address& info) const;
 
     [[nodiscard]] bool isPathSafe(const std::filesystem::path& path) const;
 
@@ -47,10 +51,14 @@ private:
     [[nodiscard]] std::optional<HttpResponse> readFromCache(const std::filesystem::path& path,
                                                             const Address& info) const;
 
-    [[nodiscard]] std::string generateDirectoryListing(const std::filesystem::path& path,
-                                                       const std::string& request_path) const;
+    [[nodiscard]] HttpResponse generateDirectoryListing(const std::filesystem::path& path,
+                                                        const std::string& request_path) const;
 
     void updateCache(const std::filesystem::path& path, const HttpResponse& builder) const;
+
+    [[nodiscard]] HttpResponse render(HttpResponse builder, const HttpRequest& request) const;
+
+    [[nodiscard]] std::optional<std::string> getTemplate(const std::string& name) const;
 };
 
 #endif  // CORE_STATIC_FILE_H

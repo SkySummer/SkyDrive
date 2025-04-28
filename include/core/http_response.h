@@ -14,6 +14,10 @@ public:
 
     HttpResponse& addHeader(const std::string& key, const std::string& value);
 
+    HttpResponse& renderTemplate(std::string key, const std::string& value);
+
+    [[nodiscard]] std::string getContentType() const;
+
     [[nodiscard]] std::string build();
 
     [[nodiscard]] static HttpResponse responseError(int code, const std::string& tips = "");
@@ -26,7 +30,9 @@ public:
 private:
     std::string status_ = "200 OK";
     std::string body_;
-    std::map<std::string, std::string> headers_;
+    std::map<std::string, std::string> headers_ = {
+        {"Content-Type", "application/octet-stream"},
+    };
 };
 
 #endif  // CORE_HTTP_RESPONSE_H

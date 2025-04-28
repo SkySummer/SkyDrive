@@ -7,7 +7,6 @@
 #include <string>
 #include <utility>
 
-#include <fcntl.h>
 #include <unistd.h>
 
 #include "core/epoll_manager.h"

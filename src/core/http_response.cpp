@@ -48,6 +48,23 @@ HttpResponse& HttpResponse::addHeader(const std::string& key, const std::string&
     return *this;
 }
 
+HttpResponse& HttpResponse::renderTemplate(std::string key, const std::string& value) {
+    key = "{{" + key + "}}";
+    size_t pos = 0;
+    while ((pos = body_.find(key, pos)) != std::string::npos) {
+        body_.replace(pos, key.length(), value);
+        pos += value.length();
+    }
+    return *this;
+}
+
+std::string HttpResponse::getContentType() const {
+    if (const auto iter = headers_.find("Content-Type"); iter != headers_.end()) {
+        return iter->second;
+    }
+    return "";
+}
+
 std::string HttpResponse::build() {
     std::ostringstream oss;
     oss << "HTTP/1.1 " << status_ << "\r\n";

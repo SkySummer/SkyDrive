@@ -14,6 +14,8 @@
 
 #include "core/http_request.h"
 #include "core/http_response.h"
+#include "user/session_manager.h"
+#include "utils/cookie_parser.h"
 #include "utils/logger.h"
 #include "utils/mime_type.h"
 #include "utils/url.h"
@@ -72,26 +74,19 @@ namespace {
         return escaped;
     }
 
-    void renderTemplate(std::string& str, const std::string& key, const std::string& value) {
-        size_t pos = 0;
-        while ((pos = str.find(key, pos)) != std::string::npos) {
-            str.replace(pos, key.length(), value);
-            pos += value.length();
-        }
-    }
-
     std::string ensureTrailingSlash(const std::string& path) {
         return path.ends_with('/') ? path : path + '/';
     }
 }  // namespace
 
 StaticFile::StaticFile(const std::filesystem::path& root, const std::string& static_dir, std::string drive_dir,
-                       Logger* logger)
+                       Logger* logger, SessionManager* session_manager)
     : static_path_(weakly_canonical(root / static_dir)),
       templates_path_(weakly_canonical(root / "templates")),
       drive_url_(std::move(drive_dir)),
       drive_path_(weakly_canonical(root / "data" / drive_url_)),
-      logger_(logger) {
+      logger_(logger),
+      session_manager_(session_manager) {
     logger_->log(LogLevel::INFO, "StaticFile initialized");
     logger_->log(LogLevel::INFO, std::format("-- staticfile_path: {}", static_path_.string()));
     logger_->log(LogLevel::INFO, std::format("-- templates_path: {}", templates_path_.string()));
@@ -104,6 +99,18 @@ std::string StaticFile::getDriveUrl() const {
 }
 
 HttpResponse StaticFile::serve(const HttpRequest& request, const Address& info) const {
+    auto raw = serveRaw(request, info);
+
+    if (raw.getContentType().starts_with("text/html")) {
+        // 如果是 HTML 文件，则渲染模板
+        return render(std::move(raw), request);
+    }
+
+    // 否则直接返回
+    return raw;
+}
+
+HttpResponse StaticFile::serveRaw(const HttpRequest& request, const Address& info) const {
     const std::string& path = request.path();
     const std::string decoded_path = Url::decode(path);
     std::filesystem::path full_path = getFilePath(decoded_path);
@@ -118,8 +125,8 @@ HttpResponse StaticFile::serve(const HttpRequest& request, const Address& info) 
     }
 
     if (isDrivePath(decoded_path) && is_directory(full_path)) {
-        // 如果请求的路径没有以斜杠结尾，且不是文件，则重定向到目录
-        if (!path.ends_with('/') && !is_regular_file(full_path)) {
+        // 如果请求的路径没有以斜杠结尾，则重定向到目录
+        if (!path.ends_with('/')) {
             std::string location = path + '/';
             logger_->log(LogLevel::INFO, info,
                          std::format("Redirecting to directory with trailing slash: {} -> {}", path, location));
@@ -136,11 +143,15 @@ HttpResponse StaticFile::serve(const HttpRequest& request, const Address& info) 
 
             // 生成网盘目录列表
             logger_->log(LogLevel::DEBUG, info, std::format("Serving directory listing for: {}", full_path.string()));
-            return HttpResponse{}
-                .setStatus("200 OK")
-                .setContentType("text/html; charset=UTF-8")
-                .setBody(generateDirectoryListing(full_path, virtual_path));
+            return generateDirectoryListing(full_path, virtual_path);
         }
+    }
+
+    if (is_directory(full_path)) {
+        // 如果请求的路径是目录，则返回 404
+        logger_->log(LogLevel::DEBUG, info, "Requested path is a directory, return 404.");
+        constexpr int error_code = 404;
+        return HttpResponse::responseError(error_code);
     }
 
     if (const auto cached = readFromCache(full_path, info)) {
@@ -170,8 +181,44 @@ HttpResponse StaticFile::serve(const HttpRequest& request, const Address& info) 
     return builder;
 }
 
-std::string StaticFile::generateDirectoryListing(const std::filesystem::path& path,
-                                                 const std::string& request_path) const {
+HttpResponse StaticFile::render(HttpResponse builder, const HttpRequest& request) const {
+    builder.renderTemplate("header-auth", getTemplate("header-auth.html").value_or(""))
+        .renderTemplate("footer", getTemplate("footer.html").value_or(""));
+
+    const auto session_id = CookieParser::get(request, "session_id");
+    if (!session_id) {
+        // 未登录
+        return builder.renderTemplate("header", getTemplate("header-guest.html").value_or(""));
+    }
+
+    const auto username = session_manager_->getUsername(*session_id);
+    if (!username) {
+        // 会话过期
+        return builder.addHeader("Set-Cookie", "session_id=; Path=/; HttpOnly; Max-Age=0")
+            .renderTemplate("header", getTemplate("header-guest.html").value_or(""));
+    }
+
+    // 已登录
+    return builder.renderTemplate("header", getTemplate("header-user.html").value_or(""))
+        .renderTemplate("username", *username);
+}
+
+std::optional<std::string> StaticFile::getTemplate(const std::string& name) const {
+    std::ifstream file(templates_path_ / name);
+    if (!file.is_open()) {
+        // 模板文件不存在
+        logger_->log(LogLevel::ERROR, std::format("Template file missing: {}", name));
+        return std::nullopt;
+    }
+
+    logger_->log(LogLevel::DEBUG, std::format("Loading template: {}", name));
+    std::ostringstream buffer;
+    buffer << file.rdbuf();
+    return buffer.str();
+}
+
+HttpResponse StaticFile::generateDirectoryListing(const std::filesystem::path& path,
+                                                  const std::string& request_path) const {
     std::vector<std::filesystem::directory_entry> directories;
     std::vector<std::filesystem::directory_entry> files;
 
@@ -233,27 +280,26 @@ std::string StaticFile::generateDirectoryListing(const std::filesystem::path& pa
             <td><a href="{}">📄 {}</a></td>
             <td>{}</td>
             <td>{}</td>
-            <td><a href="{}" download>Download</a></td>
+            <td><a href="{}" download>下载</a></td>
         </tr>)",
                                href, name, size, time, href);
     }
 
-    // 读取文件内容
-    std::ifstream file(templates_path_ / "directory-listing.html");
-    if (!file.is_open()) {
-        logger_->log(LogLevel::ERROR, "Template file missing: directory-listing.html");
-        return "<h1>Template missing</h1>";
+    auto temp = getTemplate("directory-listing.html");
+    if (!temp) {
+        // 模板文件不存在，返回 500 错误
+        constexpr int error_code = 500;
+        return HttpResponse::responseError(error_code);
     }
 
-    std::ostringstream buffer;
-    buffer << file.rdbuf();
-    std::string html = buffer.str();
+    const std::string& html = *temp;
 
-    // 替换关键字
-    renderTemplate(html, "{{path}}", Url::decode(request_path));
-    renderTemplate(html, "{{entries}}", entries.str());
-
-    return html;
+    return HttpResponse{}
+        .setStatus("200 OK")
+        .setContentType("text/html; charset=UTF-8")
+        .setBody(html)
+        .renderTemplate("path", Url::decode(request_path))
+        .renderTemplate("entries", entries.str());
 }
 
 bool StaticFile::isPathSafe(const std::filesystem::path& path) const {

@@ -1,0 +1,15 @@
+<header>
+    <div class="title">
+        <a href="/">SkyDrive</a>
+    </div>
+    <div class="btn-group">
+        <div class="user-info">
+            <span>欢迎，{{username}}</span> &nbsp;|&nbsp;
+            <form action="/logout" method="post">
+                <button type="submit">退出</button>
+            </form>
+        </div>
+        <a href="/files" class="btn btn-hollow">全部文件</a>
+        <a href="/upload" class="btn btn-solid">上传文件</a>
+    </div>
+</header>
