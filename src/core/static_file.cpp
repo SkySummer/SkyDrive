@@ -18,9 +18,6 @@
 #include "utils/mime_type.h"
 #include "utils/url.h"
 
-#define STR_HELPER(x) #x      // NOLINT(cppcoreguidelines-macro-usage)
-#define STR(x) STR_HELPER(x)  // NOLINT(cppcoreguidelines-macro-usage)
-
 namespace {
     std::string formatSize(const std::uintmax_t bytes) {
         constexpr std::array<const char*, 5> units = {"B", "KB", "MB", "GB", "TB"};
@@ -102,7 +99,11 @@ StaticFile::StaticFile(const std::filesystem::path& root, const std::string& sta
     logger_->log(LogLevel::INFO, std::format("-- drive_path: {}", drive_path_.string()));
 }
 
-std::string StaticFile::serve(const HttpRequest& request, const Address& info) const {
+std::string StaticFile::getDriveUrl() const {
+    return drive_url_;
+}
+
+HttpResponse StaticFile::serve(const HttpRequest& request, const Address& info) const {
     const std::string& path = request.path();
     const std::string decoded_path = Url::decode(path);
     std::filesystem::path full_path = getFilePath(decoded_path);
@@ -113,41 +114,39 @@ std::string StaticFile::serve(const HttpRequest& request, const Address& info) c
         // 路径不安全，返回 403
         logger_->log(LogLevel::DEBUG, info, "Path is not safe, return 403.");
         constexpr int error_code = 403;
-        return HttpResponse::buildErrorResponse(error_code);
+        return HttpResponse::responseError(error_code);
     }
 
     if (isDrivePath(decoded_path) && is_directory(full_path)) {
-        // 如果请求的路径没有以斜杠结尾，则重定向到带斜杠的路径
-        if (!path.ends_with('/')) {
-            std::string corrected_url = path + '/';
+        // 如果请求的路径没有以斜杠结尾，且不是文件，则重定向到目录
+        if (!path.ends_with('/') && !is_regular_file(full_path)) {
+            std::string location = path + '/';
             logger_->log(LogLevel::INFO, info,
-                         std::format("Redirecting to directory with trailing slash: {} -> {}", path, corrected_url));
+                         std::format("Redirecting to directory with trailing slash: {} -> {}", path, location));
 
-            return HttpResponse{}
-                .setStatus("301 Moved Permanently")
-                .addHeader("Location", corrected_url)
-                .setContentType("text/plain; charset=UTF-8")
-                .setBody("Redirecting to " + corrected_url)
-                .build();
+            constexpr int redirect_code = 302;
+            return HttpResponse::responseRedirect(redirect_code, location);
         }
 
-        // 获取相对于 files 的路径
-        std::string virtual_path = path.substr(std::string(drive_url_).length() + 1);
-        virtual_path = ensureTrailingSlash(virtual_path);
+        // 如果请求的路径以斜杠结尾，则返回目录列表
+        if (path.ends_with('/')) {
+            // 获取相对于 files 的路径
+            std::string virtual_path = path.substr(std::string(drive_url_).length() + 1);
+            virtual_path = ensureTrailingSlash(virtual_path);
 
-        // 生成网盘目录列表
-        logger_->log(LogLevel::DEBUG, info, std::format("Serving directory listing for: {}", full_path.string()));
-        return HttpResponse{}
-            .setStatus("200 OK")
-            .setContentType("text/html; charset=UTF-8")
-            .setBody(generateDirectoryListing(full_path, virtual_path))
-            .build();
+            // 生成网盘目录列表
+            logger_->log(LogLevel::DEBUG, info, std::format("Serving directory listing for: {}", full_path.string()));
+            return HttpResponse{}
+                .setStatus("200 OK")
+                .setContentType("text/html; charset=UTF-8")
+                .setBody(generateDirectoryListing(full_path, virtual_path));
+        }
     }
 
-    if (auto cached = readFromCache(full_path, info)) {
+    if (const auto cached = readFromCache(full_path, info)) {
         // 从缓存中取文件
         logger_->log(LogLevel::DEBUG, info, "Static file served from cache.");
-        return cached->build();
+        return *cached;
     }
 
     std::ifstream file(full_path, std::ios::binary);
@@ -155,7 +154,7 @@ std::string StaticFile::serve(const HttpRequest& request, const Address& info) c
         // 找不到文件，返回 404
         logger_->log(LogLevel::DEBUG, info, "Static file not found, return 404.");
         constexpr int error_code = 404;
-        return HttpResponse::buildErrorResponse(error_code);
+        return HttpResponse::responseError(error_code);
     }
 
     std::ostringstream oss;
@@ -168,7 +167,7 @@ std::string StaticFile::serve(const HttpRequest& request, const Address& info) c
     updateCache(full_path, builder);
     logger_->log(LogLevel::DEBUG, info, "Static file loaded and cached.");
 
-    return builder.build();
+    return builder;
 }
 
 std::string StaticFile::generateDirectoryListing(const std::filesystem::path& path,
@@ -240,9 +239,9 @@ std::string StaticFile::generateDirectoryListing(const std::filesystem::path& pa
     }
 
     // 读取文件内容
-    std::ifstream file(templates_path_ / "directory_listing.html");
+    std::ifstream file(templates_path_ / "directory-listing.html");
     if (!file.is_open()) {
-        logger_->log(LogLevel::ERROR, "Template file missing: directory_listing.html");
+        logger_->log(LogLevel::ERROR, "Template file missing: directory-listing.html");
         return "<h1>Template missing</h1>";
     }
 
@@ -291,9 +290,9 @@ std::filesystem::path StaticFile::getFilePath(const std::string& path) const {
         {"/register", "register.html"},
         {"/register.htm", "register.html"},
         {"/register.html", "register.html"},
-        {"/change_password", "change_password.html"},
-        {"/change_password.htm", "change_password.html"},
-        {"/change_password.html", "change_password.html"},
+        {"/reset-password", "reset-password.html"},
+        {"/reset-password.htm", "reset-password.html"},
+        {"/reset-password.html", "reset-password.html"},
     };
 
     // 重定向路径

@@ -41,7 +41,7 @@ int main() {
         const std::string user_file = config.get("user_file", std::string("users.dat"));
         const std::filesystem::path user_path = weakly_canonical(root_path / "data" / user_file);
         SessionManager session_manager;
-        UserManager user_manager(user_path, &logger, &session_manager);
+        UserManager user_manager(user_path, &logger, &session_manager, drive_dir);
 
         const uint16_t port = config.get("port", 8080);
         const bool linger = config.get("linger", true);

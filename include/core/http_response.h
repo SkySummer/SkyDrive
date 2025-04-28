@@ -16,9 +16,12 @@ public:
 
     [[nodiscard]] std::string build();
 
-    [[nodiscard]] static std::string buildErrorResponse(int code, const std::string& tips = "");
+    [[nodiscard]] static HttpResponse responseError(int code, const std::string& tips = "");
 
-    [[nodiscard]] static std::string buildAlertResponse(const std::string& message);
+    [[nodiscard]] static HttpResponse responseAlert(const std::string& message);
+    [[nodiscard]] static HttpResponse responseAlert(const std::string& message, const std::string& location);
+
+    [[nodiscard]] static HttpResponse responseRedirect(int code, const std::string& location);
 
 private:
     std::string status_ = "200 OK";

@@ -59,16 +59,16 @@ bool HttpFormData::validateRequiredFields(const std::initializer_list<std::strin
     return std::ranges::all_of(required_fields, [this](const auto& field) { return contains(field); });
 }
 
-std::optional<std::string> HttpFormData::check(const std::initializer_list<std::string>& required_fields) const {
+std::optional<HttpResponse> HttpFormData::check(const std::initializer_list<std::string>& required_fields) const {
     constexpr int error_code = 400;
     if (empty()) {
-        return HttpResponse::buildErrorResponse(error_code, "No form data received.");
+        return HttpResponse::responseError(error_code, "No form data received.");
     }
     if (!validateRequiredFields(required_fields)) {
-        return HttpResponse::buildErrorResponse(error_code, "Missing required fields.");
+        return HttpResponse::responseError(error_code, "Missing required fields.");
     }
     if (size() != required_fields.size()) {
-        return HttpResponse::buildErrorResponse(error_code, "Invalid form data.");
+        return HttpResponse::responseError(error_code, "Invalid form data.");
     }
 
     return std::nullopt;

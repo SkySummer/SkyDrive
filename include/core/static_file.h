@@ -24,7 +24,11 @@ public:
     explicit StaticFile(const std::filesystem::path& root, const std::string& static_dir, std::string drive_dir,
                         Logger* logger);
 
-    [[nodiscard]] std::string serve(const HttpRequest& request, const Address& info) const;
+    [[nodiscard]] HttpResponse serve(const HttpRequest& request, const Address& info) const;
+
+    [[nodiscard]] std::string getDriveUrl() const;
+
+    [[nodiscard]] bool isDrivePath(const std::string& path) const;
 
 private:
     const std::filesystem::path static_path_;     // 静态文件目录
@@ -37,8 +41,6 @@ private:
     mutable std::mutex cache_mutex_;
 
     [[nodiscard]] bool isPathSafe(const std::filesystem::path& path) const;
-
-    [[nodiscard]] bool isDrivePath(const std::string& path) const;
 
     [[nodiscard]] std::filesystem::path getFilePath(const std::string& path) const;
 

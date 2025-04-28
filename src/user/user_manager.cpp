@@ -17,28 +17,27 @@
 #include "utils/http_form_data.h"
 #include "utils/logger.h"
 
-#define STR_HELPER(x) #x      // NOLINT(cppcoreguidelines-macro-usage)
-#define STR(x) STR_HELPER(x)  // NOLINT(cppcoreguidelines-macro-usage)
-
 namespace {
     std::string formatUserCount(size_t user_count) {
         return std::format("{} {}", user_count, user_count == 1 ? "user" : "users");
     }
 }  // namespace
 
-UserManager::UserManager(std::filesystem::path path, Logger* logger, SessionManager* session_manager)
-    : path_(std::move(path)), logger_(logger), session_manager_(session_manager) {
+UserManager::UserManager(std::filesystem::path path, Logger* logger, SessionManager* session_manager,
+                         const std::string& drive_dir)
+    : path_(std::move(path)), logger_(logger), session_manager_(session_manager), drive_dir_('/' + drive_dir + '/') {
     const size_t user_count = loadUsers();
     logger_->log(LogLevel::INFO, std::format("UserManager initialized with {}", formatUserCount(user_count)));
     logger_->log(LogLevel::INFO, std::format("-- user_file: {}", path_.string()));
 }
 
 UserManager::~UserManager() {
-    saveUsers();
-    logger_->log(LogLevel::INFO, "UserManager saved and destroyed");
+    const size_t user_count = saveUsers();
+    logger_->log(LogLevel::INFO, std::format("UserManager saved with {}", formatUserCount(user_count)));
+    logger_->log(LogLevel::INFO, "UserManager destroyed");
 }
 
-std::string UserManager::registerUser(const HttpRequest& request) {
+HttpResponse UserManager::registerUser(const HttpRequest& request) {
     const auto form_data = HttpFormData(request.body());
     if (auto invalid = form_data.check({"username", "password", "confirm_password"})) {
         return *invalid;
@@ -48,7 +47,7 @@ std::string UserManager::registerUser(const HttpRequest& request) {
     const std::string password = form_data.get("password").value_or("");
 
     if (password != form_data.get("confirm_password").value_or("-")) {
-        return HttpResponse::buildAlertResponse("两次输入的密码不一致，请重新输入。");
+        return HttpResponse::responseAlert("两次输入的密码不一致，请重新输入。");
     }
 
     const std::string salt = Hash::randomSalt();
@@ -64,7 +63,7 @@ std::string UserManager::registerUser(const HttpRequest& request) {
     }
 
     if (exists) {
-        return HttpResponse::buildAlertResponse("用户名已存在，请重新输入。");
+        return HttpResponse::responseAlert("用户名已存在，请重新输入。");
     }
 
     logger_->log(LogLevel::INFO, std::format("User registered successfully: {}", username));
@@ -72,15 +71,14 @@ std::string UserManager::registerUser(const HttpRequest& request) {
 
     auto session_id = session_manager_->createSession(username);
 
-    return HttpResponse{}
-        .setStatus("200 OK")
+    constexpr int redirect_code = 302;
+    return HttpResponse::responseRedirect(redirect_code, drive_dir_)
         .addHeader("Set-Cookie", std::format("session_id={}; Path=/; HttpOnly", session_id))
         .setContentType("text/plain; charset=UTF-8")
-        .setBody("Registration successful.")
-        .build();
+        .setBody("Registration successful.");
 }
 
-std::string UserManager::loginUser(const HttpRequest& request) {
+HttpResponse UserManager::loginUser(const HttpRequest& request) {
     const auto form_data = HttpFormData(request.body());
     if (auto invalid = form_data.check({"username", "password"})) {
         return *invalid;
@@ -97,22 +95,21 @@ std::string UserManager::loginUser(const HttpRequest& request) {
     }
 
     if (!checked) {
-        return HttpResponse::buildAlertResponse("用户名或密码错误，请重新输入。");
+        return HttpResponse::responseAlert("用户名或密码错误，请重新输入。");
     }
 
     logger_->log(LogLevel::INFO, std::format("User logged in successfully: {}", username));
 
     auto session_id = session_manager_->createSession(username);
 
-    return HttpResponse{}
-        .setStatus("200 OK")
+    constexpr int redirect_code = 302;
+    return HttpResponse::responseRedirect(redirect_code, drive_dir_)
         .addHeader("Set-Cookie", std::format("session_id={}; Path=/; HttpOnly", session_id))
         .setContentType("text/plain; charset=UTF-8")
-        .setBody("Login successful.")
-        .build();
+        .setBody("Login successful.");
 }
 
-std::string UserManager::changePassword(const HttpRequest& request) {
+HttpResponse UserManager::changePassword(const HttpRequest& request) {
     const auto form_data = HttpFormData(request.body());
     if (auto invalid = form_data.check({"username", "old_password", "new_password", "confirm_password"})) {
         return *invalid;
@@ -123,7 +120,7 @@ std::string UserManager::changePassword(const HttpRequest& request) {
     const std::string new_password = form_data.get("new_password").value_or("");
 
     if (new_password != form_data.get("confirm_password").value_or("-")) {
-        return HttpResponse::buildAlertResponse("两次输入的新密码不一致，请重新输入。");
+        return HttpResponse::responseAlert("两次输入的新密码不一致，请重新输入。");
     }
 
     const std::string salt = Hash::randomSalt();
@@ -139,37 +136,49 @@ std::string UserManager::changePassword(const HttpRequest& request) {
     }
 
     if (!changed) {
-        return HttpResponse::buildAlertResponse("用户名或旧密码错误，请重新输入。");
+        return HttpResponse::responseAlert("用户名或旧密码错误，请重新输入。");
     }
 
     logger_->log(LogLevel::INFO, std::format("User password changed successfully: {}", username));
     saveUsers();
 
-    return HttpResponse{}
-        .setStatus("200 OK")
-        .setContentType("text/plain; charset=UTF-8")
-        .setBody("Password changed successfully.")
-        .build();
+    if (const auto session_id = CookieParser::get(request, "session_id"); session_id && isLoggedIn(*session_id)) {
+        // 如果用户已登录，则注销当前会话
+        session_manager_->removeSession(*session_id);
+        logger_->log(LogLevel::INFO, std::format("User logged out after password change: {}", username));
+    }
+
+    return HttpResponse::responseAlert("密码修改成功，请重新登录。", "/login")
+        .addHeader("Set-Cookie", "session_id=; Path=/; HttpOnly; Max-Age=0");
 }
 
-std::string UserManager::logoutUser(const HttpRequest& request) const {
+HttpResponse UserManager::logoutUser(const HttpRequest& request) const {
     const auto session_id = CookieParser::get(request, "session_id");
-    if (!session_id) {
-        return HttpResponse::buildAlertResponse("未登录或会话已过期，请重新登录。");
-    }
-    if (!session_manager_->getUsername(*session_id)) {
-        return HttpResponse::buildAlertResponse("未登录或会话已过期，请重新登录。");
+    if (!session_id || !isLoggedIn(*session_id)) {
+        return HttpResponse::responseAlert("未登录或会话已过期，请重新登录。", "/login")
+            .addHeader("Set-Cookie", "session_id=; Path=/; HttpOnly; Max-Age=0");
     }
 
     session_manager_->removeSession(*session_id);
     logger_->log(LogLevel::INFO, std::format("User logged out. Session id: {}", *session_id));
 
-    return HttpResponse{}
-        .setStatus("200 OK")
-        .addHeader("Set-Cookie", "session_id=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT")
+    constexpr int redirect_code = 302;
+    return HttpResponse::responseRedirect(redirect_code, "/")
+        .addHeader("Set-Cookie", "session_id=; Path=/; HttpOnly; Max-Age=0")
         .setContentType("text/plain; charset=UTF-8")
-        .setBody("Logout successful.")
-        .build();
+        .setBody("Logout successful.");
+}
+
+bool UserManager::isLoggedIn(const HttpRequest& request) const {
+    const auto session_id = CookieParser::get(request, "session_id");
+    if (!session_id) {
+        return false;
+    }
+    return isLoggedIn(*session_id);
+}
+
+bool UserManager::isLoggedIn(const std::string& session_id) const {
+    return session_manager_->getUsername(session_id).has_value();
 }
 
 size_t UserManager::loadUsers() {
@@ -209,11 +218,11 @@ size_t UserManager::loadUsers() {
     return users_.size();
 }
 
-void UserManager::saveUsers() {
+size_t UserManager::saveUsers() {
     std::ofstream file(path_, std::ios::trunc);
     if (!file.is_open()) {
         logger_->log(LogLevel::ERROR, std::format("Failed to open user file for writing: {}", path_.string()));
-        return;
+        return 0;
     }
 
     std::lock_guard lock(users_mutex_);
@@ -224,4 +233,6 @@ void UserManager::saveUsers() {
 
         file << encoded_username << "|" << encoded_salt << "|" << encoded_password << "\n";
     }
+
+    return users_.size();
 }

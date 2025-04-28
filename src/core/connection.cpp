@@ -15,6 +15,7 @@
 #include "core/static_file.h"
 #include "user/user_manager.h"
 #include "utils/logger.h"
+#include "utils/url.h"
 
 Connection::Connection(const int client_fd, const sockaddr_in& addr, EpollManager* epoll, Logger* logger,
                        StaticFile* static_file, UserManager* user_manager, const bool linger)
@@ -91,21 +92,21 @@ void Connection::readAndHandleRequest() const {
 
         const HttpRequest http_request(request);
 
-        response = handleRequest(http_request);
+        response = handleRequest(http_request).build();
     } catch (const std::invalid_argument& e) {
         logger_->log(LogLevel::INFO, info_, std::format("Invalid HTTP request: {}", e.what()));
         constexpr int error_code = 400;
-        response = HttpResponse::buildErrorResponse(error_code);
+        response = HttpResponse::responseError(error_code).build();
     } catch (const std::exception& e) {
         logger_->log(LogLevel::ERROR, info_, std::format("Exception: {}", e.what()));
         constexpr int error_code = 500;
-        response = HttpResponse::buildErrorResponse(error_code);
+        response = HttpResponse::responseError(error_code).build();
     }
 
     if (response.empty()) {
         logger_->log(LogLevel::ERROR, info_, "Empty response generated.");
         constexpr int error_code = 500;
-        response = HttpResponse::buildErrorResponse(error_code);
+        response = HttpResponse::responseError(error_code).build();
     }
 
     write(client_fd_, response.c_str(), response.size());
@@ -115,7 +116,7 @@ void Connection::readAndHandleRequest() const {
     }
 }
 
-std::string Connection::handleRequest(const HttpRequest& request) const {
+HttpResponse Connection::handleRequest(const HttpRequest& request) const {
     const std::string& method = request.method();
     const std::string& path = request.path();
 
@@ -131,14 +132,38 @@ std::string Connection::handleRequest(const HttpRequest& request) const {
 
     logger_->log(LogLevel::DEBUG, info_, std::format("Unsupported method: {} on path: {}", method, path));
     constexpr int error_code = 405;
-    return HttpResponse::buildErrorResponse(error_code);
+    return HttpResponse::responseError(error_code);
 }
 
-std::string Connection::handleGetRequest(const HttpRequest& request) const {
+HttpResponse Connection::handleGetRequest(const HttpRequest& request) const {
+    const std::string& path = Url::decode(request.path());
+
+    if (user_manager_->isLoggedIn(request)) {
+        static const std::string drive_url = '/' + static_file_->getDriveUrl() + '/';
+        static const std::unordered_map<std::string, std::string> redirect_map = {
+            {"/login", drive_url},    {"/login.htm", drive_url},    {"/login.html", drive_url},
+            {"/register", drive_url}, {"/register.htm", drive_url}, {"/register.html", drive_url},
+        };
+
+        if (redirect_map.contains(path)) {
+            const std::string& location = redirect_map.at(path);
+            logger_->log(LogLevel::DEBUG, info_, std::format("Redirecting to: {}", location));
+            constexpr int redirect_code = 302;
+            return HttpResponse::responseRedirect(redirect_code, location);
+        }
+    } else {
+        if (static_file_->isDrivePath(path)) {
+            // 如果用户未登录，则重定向到登录页面
+            logger_->log(LogLevel::DEBUG, info_, std::format("Redirecting to login page for path: {}", path));
+            constexpr int redirect_code = 302;
+            return HttpResponse::responseRedirect(redirect_code, "/login");
+        }
+    }
+
     return static_file_->serve(request, info_);
 }
 
-std::string Connection::handlePostRequest(const HttpRequest& request) const {
+HttpResponse Connection::handlePostRequest(const HttpRequest& request) const {
     const std::string& path = request.path();
 
     if (path == "/login") {
@@ -149,7 +174,7 @@ std::string Connection::handlePostRequest(const HttpRequest& request) const {
         return user_manager_->registerUser(request);
     }
 
-    if (path == "/change_password") {
+    if (path == "/reset-password") {
         return user_manager_->changePassword(request);
     }
 
@@ -158,7 +183,7 @@ std::string Connection::handlePostRequest(const HttpRequest& request) const {
     }
 
     constexpr int error_code = 405;
-    return HttpResponse::buildErrorResponse(error_code);
+    return HttpResponse::responseError(error_code);
 }
 
 void Connection::closeConnection() {

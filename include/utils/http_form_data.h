@@ -6,6 +6,9 @@
 #include <string>
 #include <unordered_map>
 
+// 前向声明
+class HttpResponse;
+
 class HttpFormData {
 public:
     HttpFormData() = default;
@@ -26,7 +29,7 @@ public:
 
     [[nodiscard]] bool validateRequiredFields(const std::initializer_list<std::string>& required_fields) const;
 
-    [[nodiscard]] std::optional<std::string> check(const std::initializer_list<std::string>& required_fields) const;
+    [[nodiscard]] std::optional<HttpResponse> check(const std::initializer_list<std::string>& required_fields) const;
 
 private:
     std::unordered_map<std::string, std::string> data_;

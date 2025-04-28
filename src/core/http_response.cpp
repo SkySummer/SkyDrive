@@ -62,7 +62,7 @@ std::string HttpResponse::build() {
     return oss.str();
 }
 
-std::string HttpResponse::buildErrorResponse(const int code, const std::string& tips) {
+HttpResponse HttpResponse::responseError(const int code, const std::string& tips) {
     std::string status;
     std::string message;
 
@@ -110,16 +110,49 @@ std::string HttpResponse::buildErrorResponse(const int code, const std::string& 
     return HttpResponse{}
         .setStatus(std::format("{} {}", code, status))
         .setContentType("text/html; charset=UTF-8")
-        .setBody(std::format(ERROR_HTML_TEMPLATE, code, status, message))
-        .build();
+        .setBody(std::format(ERROR_HTML_TEMPLATE, code, status, message));
 }
 
-std::string HttpResponse::buildAlertResponse(const std::string& message) {
+HttpResponse HttpResponse::responseAlert(const std::string& message) {
     const std::string html = std::format(
         "<!DOCTYPE html><html><head><meta charset='UTF-8'>"
         "<script>alert('{}'); window.history.back();</script>"
         "</head><body></body></html>",
         message);
 
-    return HttpResponse{}.setStatus("200 OK").setContentType("text/html; charset=UTF-8").setBody(html).build();
+    return HttpResponse{}.setStatus("200 OK").setContentType("text/html; charset=UTF-8").setBody(html);
+}
+
+HttpResponse HttpResponse::responseAlert(const std::string& message, const std::string& location) {
+    const std::string html = std::format(
+        "<!DOCTYPE html><html><head><meta charset='UTF-8'>"
+        "<script>alert('{}'); window.location.href='{}';</script>"
+        "</head><body></body></html>",
+        message, location);
+
+    return HttpResponse{}.setStatus("200 OK").setContentType("text/html; charset=UTF-8").setBody(html);
+}
+
+HttpResponse HttpResponse::responseRedirect(const int code, const std::string& location) {
+    std::string status;
+
+    // NOLINTBEGIN(readability-magic-numbers, cppcoreguidelines-avoid-magic-numbers)
+    switch (code) {
+        case 301:
+            status = "301 Moved Permanently";
+            break;
+        case 302:
+            status = "302 Found";
+            break;
+        default:
+            status = std::to_string(code) + " Redirect";
+            break;
+    }
+    // NOLINTEND(readability-magic-numbers, cppcoreguidelines-avoid-magic-numbers)
+
+    return HttpResponse{}
+        .setStatus(status)
+        .addHeader("Location", location)
+        .setContentType("text/plain; charset=UTF-8")
+        .setBody("Redirecting to " + location);
 }

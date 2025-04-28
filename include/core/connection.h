@@ -14,6 +14,7 @@ class Logger;
 class StaticFile;
 class UserManager;
 class HttpRequest;
+class HttpResponse;
 
 class Connection {
 public:
@@ -47,9 +48,9 @@ private:
 
     void readAndHandleRequest() const;
 
-    [[nodiscard]] std::string handleRequest(const HttpRequest& request) const;
-    [[nodiscard]] std::string handleGetRequest(const HttpRequest& request) const;
-    [[nodiscard]] std::string handlePostRequest(const HttpRequest& request) const;
+    [[nodiscard]] HttpResponse handleRequest(const HttpRequest& request) const;
+    [[nodiscard]] HttpResponse handleGetRequest(const HttpRequest& request) const;
+    [[nodiscard]] HttpResponse handlePostRequest(const HttpRequest& request) const;
 
     void closeConnection();
     void applyLinger(bool flag) const;
