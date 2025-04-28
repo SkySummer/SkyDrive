@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Index of {{path}}</title>
+    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="/files.css">
+</head>
+
+<body>
+    <header>
+        <div class="title">
+            <a href="/">SkyDrive</a>
+        </div>
+        <div class="btn-group">
+            <div class="user-info">
+                <span>欢迎，{{username}}</span> &nbsp;|&nbsp;
+                <form action="/logout" method="post">
+                    <button type="submit">退出</button>
+                </form>
+            </div>
+            <a href="/files" class="btn btn-hollow">全部文件</a>
+            <a href="/upload" class="btn btn-solid">上传文件</a>
+        </div>
+    </header>
+
+    <main>
+        <h1>📁 Index of {{path}}</h1>
+
+        <table>
+            <tr>
+                <th>名称</th>
+                <th>大小</th>
+                <th>最后修改时间</th>
+                <th>操作</th>
+            </tr>
+            {{entries}}
+        </table>
+    </main>
+
+    <footer>Copyright © 2025 SkyDrive</footer>
+</body>
+
+</html>

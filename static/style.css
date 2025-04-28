@@ -1,0 +1,113 @@
+:root {
+    --primary-color: #007bff;
+    --primary-dark: #0056b3;
+}
+
+body {
+    font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif;
+    background: #f8f9fa;
+    color: #343a40;
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    margin: 0;
+    padding: 0;
+}
+
+main {
+    flex: 1;
+}
+
+h1 {
+    font-size: 3rem;
+    color: var(--primary-color);
+    margin: 2rem 0;
+}
+
+header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 2rem;
+    background-color: white;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    user-select: none;
+}
+
+header .title {
+    font-size: 1.5rem;
+    color: var(--primary-color);
+    font-weight: bold;
+    user-select: none;
+}
+
+header .title a {
+    text-decoration: none;
+    color: inherit;
+}
+
+header .btn-group {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+header .btn {
+    padding: 0.5rem 1rem;
+    font-size: 1rem;
+    border-radius: 5px;
+    text-decoration: none !important;
+    cursor: pointer;
+    transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+    user-select: none;
+}
+
+header .btn-solid {
+    background-color: var(--primary-color);
+    color: white;
+    border: 2px solid var(--primary-color);
+}
+
+header .btn-solid:hover {
+    background-color: var(--primary-dark);
+    border: 2px solid var(--primary-dark);
+}
+
+header .btn-hollow {
+    background-color: transparent;
+    color: var(--primary-color);
+    border: 2px solid var(--primary-color);
+}
+
+header .btn-hollow:hover {
+    background-color: var(--primary-color);
+    color: white;
+}
+
+header form {
+    display: inline;
+    padding: 0;
+}
+
+header .user-info {
+    margin: 0 0.5rem 0 0;
+}
+
+header button {
+    background: none;
+    border: none;
+    color: #dc3545;
+    cursor: pointer;
+    font: inherit;
+    text-decoration: none;
+    padding: 0;
+    margin: 0;
+}
+
+footer {
+    text-align: center;
+    padding: 2rem 1rem;
+    font-size: 0.9rem;
+    color: #6c757d;
+    user-select: none;
+}

@@ -1,0 +1,37 @@
+main {
+    padding: 0 3rem;
+}
+
+h1 {
+    font-size: 2.5rem;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 1rem;
+}
+
+th,
+td {
+    text-align: left;
+    padding: 0.75rem 1rem;
+}
+
+th {
+    background-color: #e9f5ff;
+    border-bottom: 2px solid var(--primary-color);
+}
+
+tr:nth-child(even) {
+    background-color: #f1f3f5;
+}
+
+a {
+    text-decoration: none;
+    color: var(--primary-color);
+}
+
+a:hover {
+    text-decoration: underline;
+}

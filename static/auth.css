@@ -1,0 +1,71 @@
+body {
+    text-align: center;
+}
+
+h1 {
+    margin: 4rem 0;
+    font-size: 2.5rem;
+}
+
+form {
+    display: inline-block;
+    text-align: left;
+    background: white;
+    padding: 2rem;
+    border-radius: 10px;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.05);
+}
+
+.links {
+    margin-top: 1.5rem;
+    font-size: 0.95rem;
+    color: #6c757d;
+}
+
+.links a {
+    color: #007bff;
+    text-decoration: none;
+    margin: 0 0.3rem;
+}
+
+.links a:hover {
+    text-decoration: underline;
+}
+
+label {
+    display: block;
+    margin-top: 1rem;
+    font-weight: bold;
+}
+
+input[type="text"],
+input[type="password"] {
+    font-family: inherit;
+    width: 100%;
+    max-width: 100%;
+    min-width: 300px;
+    box-sizing: border-box;
+    padding: 0.5rem;
+    margin-top: 0.5rem;
+    border: 1px solid #ced4da;
+    border-radius: 5px;
+    font-size: 1rem;
+}
+
+input[type="submit"] {
+    display: block;
+    margin-top: 1.5rem;
+    margin-left: auto;
+    margin-right: auto;
+    padding: 0.6rem 1.2rem;
+    font-size: 1rem;
+    background-color: var(--primary-color);
+    border: none;
+    color: white;
+    border-radius: 5px;
+    cursor: pointer;
+}
+
+input[type="submit"]:hover {
+    background-color: var(--primary-dark);
+}
