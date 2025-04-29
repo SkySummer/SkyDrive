@@ -38,6 +38,10 @@ UserManager::~UserManager() {
 }
 
 HttpResponse UserManager::registerUser(const HttpRequest& request) {
+    if (isLoggedIn(request)) {
+        return HttpResponse::responseAlert("已登录，请先注销当前会话。", "/");
+    }
+
     const auto form_data = HttpFormData(request.body());
     if (auto invalid = form_data.check({"username", "password", "confirm_password"})) {
         return *invalid;
@@ -79,6 +83,10 @@ HttpResponse UserManager::registerUser(const HttpRequest& request) {
 }
 
 HttpResponse UserManager::loginUser(const HttpRequest& request) {
+    if (isLoggedIn(request)) {
+        return HttpResponse::responseAlert("已登录，请先注销当前会话。", "/");
+    }
+
     const auto form_data = HttpFormData(request.body());
     if (auto invalid = form_data.check({"username", "password"})) {
         return *invalid;
