@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.13)
 project(SkyDrive LANGUAGES CXX)
 
+# 自动创建源码目录下的 data 和 data/files 文件夹
+file(MAKE_DIRECTORY "${CMAKE_SOURCE_DIR}/data")
+file(MAKE_DIRECTORY "${CMAKE_SOURCE_DIR}/data/files")
+
 # 设置全局 C++ 标准为 C++20
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
