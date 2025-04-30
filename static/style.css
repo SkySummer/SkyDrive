@@ -104,6 +104,14 @@ header button {
     margin: 0;
 }
 
+header .upload-input {
+    display: none;
+}
+
+header .upload-label {
+    cursor: pointer;
+}
+
 footer {
     text-align: center;
     padding: 2rem 1rem;

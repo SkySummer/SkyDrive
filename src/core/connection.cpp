@@ -11,9 +11,11 @@
 
 #include "core/epoll_manager.h"
 #include "core/http_request.h"
+#include "core/http_response.h"
 #include "core/static_file.h"
 #include "user/user_manager.h"
 #include "utils/logger.h"
+#include "utils/upload_file.h"
 #include "utils/url.h"
 
 Connection::Connection(const int client_fd, const sockaddr_in& addr, EpollManager* epoll, Logger* logger,
@@ -151,7 +153,7 @@ HttpResponse Connection::handleGetRequest(const HttpRequest& request) const {
             return HttpResponse::responseRedirect(redirect_code, location);
         }
     } else {
-        if (static_file_->isDrivePath(path)) {
+        if (static_file_->isDriveUrl(path)) {
             // 如果用户未登录，则重定向到登录页面
             logger_->log(LogLevel::DEBUG, info_, std::format("Redirecting to login page for path: {}", path));
             constexpr int redirect_code = 302;
@@ -179,6 +181,18 @@ HttpResponse Connection::handlePostRequest(const HttpRequest& request) const {
 
     if (path == "/logout") {
         return user_manager_->logoutUser(request);
+    }
+
+    if (path.ends_with("/upload")) {
+        if (!user_manager_->isLoggedIn(request)) {
+            // 如果用户未登录，则返回 401 错误
+            logger_->log(LogLevel::DEBUG, info_, "Unauthorized upload attempt.");
+            constexpr int error_code = 401;
+            return HttpResponse::responseError(error_code, "You must be logged in to upload files.");
+        }
+
+        const UploadFile upload(request, logger_, static_file_, info_);
+        return upload.process();
     }
 
     constexpr int error_code = 405;

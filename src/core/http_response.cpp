@@ -105,6 +105,10 @@ HttpResponse HttpResponse::responseError(const int code, const std::string& tips
             status = "Method Not Allowed";
             message = "The method you're trying to use is not allowed for this resource.";
             break;
+        case 409:
+            status = "Conflict";
+            message = "The request could not be completed due to a conflict with the current state of the resource.";
+            break;
         case 500:
             status = "Internal Server Error";
             message = "Something went wrong on the server.";

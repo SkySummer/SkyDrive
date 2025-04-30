@@ -18,6 +18,8 @@ public:
     [[nodiscard]] const std::string& body() const;
 
     [[nodiscard]] std::optional<std::string> getHeader(const std::string& key) const;
+    
+    [[nodiscard]] std::optional<std::string> getBoundary() const;
 
     void clear();
 

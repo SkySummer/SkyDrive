@@ -33,7 +33,12 @@ namespace {
         }
 
         std::ostringstream oss;
-        oss << std::fixed << std::setprecision(2) << size << " " << units.at(unit_index);
+        if (unit_index == 0) {
+            oss << std::fixed << std::setprecision(0);
+        } else {
+            oss << std::fixed << std::setprecision(2);
+        }
+        oss << size << " " << units.at(unit_index);
         return oss.str();
     }
 
@@ -98,22 +103,29 @@ std::string StaticFile::getDriveUrl() const {
     return drive_url_;
 }
 
+std::filesystem::path StaticFile::getDrivePath() const {
+    return drive_path_;
+}
+
 HttpResponse StaticFile::serve(const HttpRequest& request, const Address& info) const {
-    auto raw = serveRaw(request, info);
+    auto page_type = PageType::NORMAL;
+
+    auto raw = serveRaw(request, info, page_type);
 
     if (raw.getContentType().starts_with("text/html")) {
         // 如果是 HTML 文件，则渲染模板
-        return render(std::move(raw), request);
+        return render(std::move(raw), request, page_type);
     }
 
     // 否则直接返回
     return raw;
 }
 
-HttpResponse StaticFile::serveRaw(const HttpRequest& request, const Address& info) const {
+HttpResponse StaticFile::serveRaw(const HttpRequest& request, const Address& info, PageType& page_type) const {
     const std::string& path = request.path();
     const std::string decoded_path = Url::decode(path);
-    std::filesystem::path full_path = getFilePath(decoded_path);
+    const auto [full_path, type] = getFileInfo(decoded_path);
+    page_type = type;
 
     logger_->log(LogLevel::DEBUG, info, std::format("Request for static file: {}", full_path.string()));
 
@@ -124,7 +136,7 @@ HttpResponse StaticFile::serveRaw(const HttpRequest& request, const Address& inf
         return HttpResponse::responseError(error_code);
     }
 
-    if (isDrivePath(decoded_path) && is_directory(full_path)) {
+    if (isDriveUrl(decoded_path) && is_directory(full_path)) {
         // 如果请求的路径没有以斜杠结尾，则重定向到目录
         if (!path.ends_with('/')) {
             std::string location = path + '/';
@@ -181,9 +193,13 @@ HttpResponse StaticFile::serveRaw(const HttpRequest& request, const Address& inf
     return builder;
 }
 
-HttpResponse StaticFile::render(HttpResponse builder, const HttpRequest& request) const {
-    builder.renderTemplate("header-auth", getTemplate("header-auth.html").value_or(""))
-        .renderTemplate("footer", getTemplate("footer.html").value_or(""));
+HttpResponse StaticFile::render(HttpResponse builder, const HttpRequest& request, const PageType page_type) const {
+    builder.renderTemplate("footer", getTemplate("footer.html").value_or(""));
+
+    if (page_type == PageType::AUTH) {
+        // 认证页面
+        return builder.renderTemplate("header-auth", getTemplate("header-auth.html").value_or(""));
+    }
 
     const auto session_id = CookieParser::get(request, "session_id");
     if (!session_id) {
@@ -199,8 +215,15 @@ HttpResponse StaticFile::render(HttpResponse builder, const HttpRequest& request
     }
 
     // 已登录
-    return builder.renderTemplate("header", getTemplate("header-user.html").value_or(""))
+    builder.renderTemplate("header", getTemplate("header-user.html").value_or(""))
         .renderTemplate("username", *username);
+
+    if (page_type == PageType::DRIVE) {
+        // 网盘页面
+        return builder.renderTemplate("upload", getTemplate("upload.html").value_or(""));
+    }
+
+    return builder.renderTemplate("upload", "");
 }
 
 std::optional<std::string> StaticFile::getTemplate(const std::string& name) const {
@@ -307,48 +330,49 @@ bool StaticFile::isPathSafe(const std::filesystem::path& path) const {
            weakly_canonical(path).string().starts_with(drive_path_.string());
 }
 
-bool StaticFile::isDrivePath(const std::string& path) const {
+bool StaticFile::isDriveUrl(const std::string& path) const {
     return path == '/' + drive_url_ || path.starts_with('/' + drive_url_ + '/');
 }
 
-std::filesystem::path StaticFile::getFilePath(const std::string& path) const {
-    if (isDrivePath(path)) {
+std::pair<std::filesystem::path, PageType> StaticFile::getFileInfo(const std::string& path) const {
+    if (isDriveUrl(path)) {
         if (path == '/' + drive_url_ || path == '/' + drive_url_ + '/') {
             // 网盘根目录
-            return weakly_canonical(drive_path_);
+            return {weakly_canonical(drive_path_), PageType::DRIVE};
         }
 
         // 网盘路径
         const std::string drive_path = path.substr(drive_url_.length() + 2);
-        return weakly_canonical(drive_path_ / drive_path);
+        return {weakly_canonical(drive_path_ / drive_path), PageType::DRIVE};
     }
 
-    static const std::unordered_map<std::string, std::string> redirect_map = {
-        {"/", "index.html"},
-        {"/index", "index.html"},
-        {"/index.htm", "index.html"},
-        {"/index.html", "index.html"},
-        {"/default.htm", "index.html"},
-        {"/default.html", "index.html"},
-        {"/login", "login.html"},
-        {"/login.htm", "login.html"},
-        {"/login.html", "login.html"},
-        {"/register", "register.html"},
-        {"/register.htm", "register.html"},
-        {"/register.html", "register.html"},
-        {"/reset-password", "reset-password.html"},
-        {"/reset-password.htm", "reset-password.html"},
-        {"/reset-password.html", "reset-password.html"},
+    static const std::unordered_map<std::string, std::pair<std::string, PageType>> redirect_map = {
+        {"/", {"index.html", PageType::INDEX}},
+        {"/index", {"index.html", PageType::INDEX}},
+        {"/index.htm", {"index.html", PageType::INDEX}},
+        {"/index.html", {"index.html", PageType::INDEX}},
+        {"/default.htm", {"index.html", PageType::INDEX}},
+        {"/default.html", {"index.html", PageType::INDEX}},
+        {"/login", {"login.html", PageType::AUTH}},
+        {"/login.htm", {"login.html", PageType::AUTH}},
+        {"/login.html", {"login.html", PageType::AUTH}},
+        {"/register", {"register.html", PageType::AUTH}},
+        {"/register.htm", {"register.html", PageType::AUTH}},
+        {"/register.html", {"register.html", PageType::AUTH}},
+        {"/reset-password", {"reset-password.html", PageType::AUTH}},
+        {"/reset-password.htm", {"reset-password.html", PageType::AUTH}},
+        {"/reset-password.html", {"reset-password.html", PageType::AUTH}},
     };
 
     // 重定向路径
     if (const auto redirect_iter = redirect_map.find(path); redirect_iter != redirect_map.end()) {
-        return weakly_canonical(static_path_ / redirect_iter->second);
+        const auto& [path, page_type] = redirect_iter->second;
+        return {weakly_canonical(static_path_ / path), page_type};
     }
 
     // 静态文件路径
     const std::string clean_path = path.substr(1);
-    return weakly_canonical(static_path_ / clean_path);
+    return {weakly_canonical(static_path_ / clean_path), PageType::NORMAL};
 }
 
 std::optional<HttpResponse> StaticFile::readFromCache(const std::filesystem::path& path, const Address& info) const {

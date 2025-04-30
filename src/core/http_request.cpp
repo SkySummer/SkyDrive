@@ -82,6 +82,21 @@ std::optional<std::string> HttpRequest::getHeader(const std::string& key) const 
     return std::nullopt;
 }
 
+std::optional<std::string> HttpRequest::getBoundary() const {
+    auto content_type = getHeader("Content-Type");
+    if (content_type) {
+        const std::string boundary_prefix = "boundary=";
+        const size_t pos = content_type->find(boundary_prefix);
+        if (pos != std::string::npos) {
+            const size_t start = pos + boundary_prefix.length();
+            const size_t end = content_type->find(';', start);
+            return content_type->substr(start, end - start);
+        }
+    }
+
+    return std::nullopt;
+}
+
 void HttpRequest::clear() {
     method_.clear();
     path_.clear();
