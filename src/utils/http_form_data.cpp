@@ -20,8 +20,7 @@ std::unordered_map<std::string, std::string> HttpFormData::parse(const std::stri
     std::string pair;
 
     while (std::getline(iss, pair, '&')) {
-        const auto pos = pair.find('=');
-        if (pos != std::string::npos) {
+        if (const auto pos = pair.find('='); pos != std::string::npos) {
             std::string key = pair.substr(0, pos);
             std::string value = pair.substr(pos + 1);
             result[Url::decode(key)] = Url::decode(value);
@@ -32,8 +31,7 @@ std::unordered_map<std::string, std::string> HttpFormData::parse(const std::stri
 }
 
 std::optional<std::string> HttpFormData::get(const std::string& key) const {
-    auto iter = data_.find(key);
-    if (iter != data_.end()) {
+    if (const auto iter = data_.find(key); iter != data_.end()) {
         return iter->second;
     }
     return std::nullopt;

@@ -15,8 +15,8 @@ void HttpRequest::parse(const std::string& request) {
     }
 
     // 提取请求行
-    const std::string request_line = request.substr(0, request_line_end);
     {
+        const std::string request_line = request.substr(0, request_line_end);
         std::istringstream iss(request_line);
         iss >> method_ >> path_ >> version_;
         if (version_.empty()) {
@@ -35,8 +35,7 @@ void HttpRequest::parse(const std::string& request) {
                 header_line.pop_back();  // 去掉末尾的 '\r'
             }
 
-            const size_t colon_pos = header_line.find(':');
-            if (colon_pos != std::string::npos) {
+            if (const size_t colon_pos = header_line.find(':'); colon_pos != std::string::npos) {
                 std::string key = header_line.substr(0, colon_pos);
                 std::string value = header_line.substr(colon_pos + 1);
 
@@ -50,7 +49,7 @@ void HttpRequest::parse(const std::string& request) {
     }
 
     // 提取请求体
-    if (headers_end != std::string::npos && headers_end + 4 < request.size()) {
+    if (headers_end + 4 < request.size()) {
         body_ = request.substr(headers_end + 4);
     }
 }
@@ -83,11 +82,9 @@ std::optional<std::string> HttpRequest::getHeader(const std::string& key) const 
 }
 
 std::optional<std::string> HttpRequest::getBoundary() const {
-    auto content_type = getHeader("Content-Type");
-    if (content_type) {
+    if (auto content_type = getHeader("Content-Type")) {
         const std::string boundary_prefix = "boundary=";
-        const size_t pos = content_type->find(boundary_prefix);
-        if (pos != std::string::npos) {
+        if (const size_t pos = content_type->find(boundary_prefix); pos != std::string::npos) {
             const size_t start = pos + boundary_prefix.length();
             const size_t end = content_type->find(';', start);
             return content_type->substr(start, end - start);

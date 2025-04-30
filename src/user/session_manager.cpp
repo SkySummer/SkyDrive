@@ -6,10 +6,10 @@
 #include <string>
 
 std::string SessionManager::createSession(const std::string& username) {
-    auto now = std::chrono::system_clock::now().time_since_epoch().count();
+    const auto now = std::chrono::system_clock::now().time_since_epoch().count();
     std::ostringstream oss;
 
-    static thread_local std::mt19937 gen(std::random_device{}());
+    thread_local std::mt19937 gen(std::random_device{}());
     static std::uniform_int_distribution<uint64_t> dis;
 
     const uint64_t random_number = dis(gen);

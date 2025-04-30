@@ -89,7 +89,7 @@ StaticFile::StaticFile(const std::filesystem::path& root, const std::string& sta
     : static_path_(weakly_canonical(root / static_dir)),
       templates_path_(weakly_canonical(root / "templates")),
       drive_url_(std::move(drive_dir)),
-      drive_path_(weakly_canonical(root / "data" / drive_url_)),
+      drive_path_(weakly_canonical(root / "data/files")),
       logger_(logger),
       session_manager_(session_manager) {
     logger_->log(LogLevel::INFO, "StaticFile initialized");

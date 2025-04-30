@@ -46,9 +46,8 @@ void MultipartParser::parse() const {
 
         if (disposition_line.starts_with("Content-Disposition")) {
             const std::string name = getHeaderValue(disposition_line, "name");
-            const std::string filename = getHeaderValue(disposition_line, "filename");
 
-            if (!filename.empty()) {
+            if (const std::string filename = getHeaderValue(disposition_line, "filename"); !filename.empty()) {
                 // 处理文件上传
                 std::string content_type = "application/octet-stream";
                 std::string line;
