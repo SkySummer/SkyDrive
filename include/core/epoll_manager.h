@@ -2,7 +2,9 @@
 #define CORE_EPOLL_MANAGER_H
 
 #include <cstdint>
+#include <mutex>
 #include <span>
+#include <unordered_set>
 
 #include <sys/epoll.h>
 
@@ -22,16 +24,10 @@ public:
 
     [[nodiscard]] int wait(std::span<epoll_event> events, int timeout = -1) const;
 
-    [[nodiscard]] int getEventFd() const;
     [[nodiscard]] int getEpollFd() const;
-
-    void notify() const;
-
-    void clearNotify() const;
 
 private:
     int epoll_fd_;
-    int event_fd_;
 };
 
 #endif  // CORE_EPOLL_MANAGER_H

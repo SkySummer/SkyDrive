@@ -1,57 +1,71 @@
 #include "core/http_request.h"
 
+#include <cstddef>
 #include <sstream>
 
-HttpRequest::HttpRequest(const std::string& request) {
-    parse(request);
-}
+bool HttpRequest::parseHeader(const std::string& raw) {
+    if (header_parsed_) {
+        return true;
+    }
 
-void HttpRequest::parse(const std::string& request) {
-    clear();
-
-    const size_t request_line_end = request.find("\r\n");
-    if (request_line_end == std::string::npos) {
-        throw std::invalid_argument("Invalid HTTP request format");
+    header_end_pos_ = raw.find("\r\n\r\n");
+    if (header_end_pos_ == std::string::npos) {
+        return false;  // 请求头不完整
     }
 
     // 提取请求行
+    const size_t request_line_end = raw.find("\r\n");
     {
-        const std::string request_line = request.substr(0, request_line_end);
-        std::istringstream iss(request_line);
+        std::istringstream iss(raw.substr(0, request_line_end));
         iss >> method_ >> path_ >> version_;
-        if (version_.empty()) {
-            throw std::invalid_argument("Invalid HTTP request format");
+        if (method_.empty() || path_.empty() || version_.empty()) {
+            throw std::invalid_argument("Invalid HTTP request line");
         }
     }
 
     // 提取请求头
-    const size_t headers_start = request_line_end + 2;  // 跳过 "\r\n"
-    const size_t headers_end = request.find("\r\n\r\n", headers_start);
-    if (headers_end != std::string::npos) {
-        std::istringstream iss(request.substr(headers_start, headers_end - headers_start));
-        std::string header_line;
-        while (std::getline(iss, header_line) && !header_line.empty()) {
-            if (header_line.back() == '\r') {
-                header_line.pop_back();  // 去掉末尾的 '\r'
-            }
+    const size_t headers_start = request_line_end + 2;
+    const size_t headers_end = header_end_pos_;
+    std::istringstream iss(raw.substr(headers_start, headers_end - headers_start));
 
-            if (const size_t colon_pos = header_line.find(':'); colon_pos != std::string::npos) {
-                std::string key = header_line.substr(0, colon_pos);
-                std::string value = header_line.substr(colon_pos + 1);
-
-                trim(key);
-                trim(value);
-                headers_[key] = value;
-            }
+    std::string line;
+    while (std::getline(iss, line) && !line.empty()) {
+        if (line.back() == '\r') {
+            line.pop_back();
         }
-    } else {
-        throw std::invalid_argument("Invalid HTTP request format");
+
+        if (const size_t colon_pos = line.find(':'); colon_pos != std::string::npos) {
+            std::string key = line.substr(0, colon_pos);
+            std::string value = line.substr(colon_pos + 1);
+            trim(key);
+            trim(value);
+            headers_[key] = value;
+        }
+    }
+
+    if (const auto iter = headers_.find("Content-Length"); iter != headers_.end()) {
+        content_length_ = std::stoul(iter->second);
+    }
+
+    header_parsed_ = true;
+    return true;
+}
+
+void HttpRequest::parseBody(const std::string& raw) {
+    if (!header_parsed_) {
+        throw std::logic_error("Cannot parse body before parsing headers");
     }
 
     // 提取请求体
-    if (headers_end + 4 < request.size()) {
-        body_ = request.substr(headers_end + 4);
+    if (const size_t body_start = header_end_pos_ + 4; body_start < raw.size()) {
+        body_ = raw.substr(body_start, content_length_);
+    } else {
+        body_.clear();
     }
+}
+
+size_t HttpRequest::totalExpectedLength() const {
+    return header_end_pos_ != std::string::npos ? header_end_pos_ + 4 + content_length_ : std::string::npos;
 }
 
 const std::string& HttpRequest::method() const {
@@ -94,12 +108,19 @@ std::optional<std::string> HttpRequest::getBoundary() const {
     return std::nullopt;
 }
 
-void HttpRequest::clear() {
+bool HttpRequest::isHeaderParsed() const {
+    return header_parsed_;
+}
+
+void HttpRequest::reset() {
     method_.clear();
     path_.clear();
     version_.clear();
     headers_.clear();
     body_.clear();
+    header_parsed_ = false;
+    header_end_pos_ = std::string::npos;
+    content_length_ = 0;
 }
 
 void HttpRequest::trim(std::string& str) {

@@ -8,20 +8,13 @@
 #include <sys/eventfd.h>
 #include <unistd.h>
 
-EpollManager::EpollManager() : epoll_fd_(epoll_create1(0)), event_fd_(eventfd(0, EFD_NONBLOCK)) {
+EpollManager::EpollManager() : epoll_fd_(epoll_create1(0)) {
     if (epoll_fd_ == -1) {
         throw std::runtime_error("Failed to create epoll instance.");
     }
-
-    if (event_fd_ == -1) {
-        throw std::runtime_error("Failed to create eventfd.");
-    }
-
-    addFd(event_fd_, EPOLLIN);
 }
 
 EpollManager::~EpollManager() {
-    close(event_fd_);
     close(epoll_fd_);
 }
 
@@ -55,24 +48,6 @@ int EpollManager::wait(std::span<epoll_event> events, const int timeout) const {
     return epoll_wait(epoll_fd_, events.data(), static_cast<int>(events.size()), timeout);
 }
 
-int EpollManager::getEventFd() const {
-    return event_fd_;
-}
-
 int EpollManager::getEpollFd() const {
     return epoll_fd_;
-}
-
-void EpollManager::notify() const {
-    constexpr uint64_t dummy = 1;
-    if (write(event_fd_, &dummy, sizeof(dummy)) != sizeof(dummy)) {
-        throw std::runtime_error(std::format("Failed to notify: {}", strerror(errno)));
-    }
-}
-
-void EpollManager::clearNotify() const {
-    uint64_t dummy{};
-    if (read(event_fd_, &dummy, sizeof(dummy)) != sizeof(dummy)) {
-        throw std::runtime_error(std::format("Failed to clear notify: {}", strerror(errno)));
-    }
 }

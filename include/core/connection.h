@@ -7,13 +7,13 @@
 #include <netinet/in.h>
 
 #include "core/address.h"
+#include "core/http_request.h"
 
 // 前向声明
 class EpollManager;
 class Logger;
 class StaticFile;
 class UserManager;
-class HttpRequest;
 class HttpResponse;
 
 class Connection {
@@ -42,11 +42,16 @@ private:
     StaticFile* static_file_;
     UserManager* user_manager_;
 
+    mutable std::string request_buffer_;  // 用于存储请求数据
+    mutable HttpRequest request_;         // 用于解析请求
+
     std::atomic<bool> closed_{false};  // 是否关闭连接
 
     std::function<void(int)> callback_;
 
     void readAndHandleRequest() const;
+
+    void tryParseAndHandleRequest() const;
 
     [[nodiscard]] HttpResponse handleRequest(const HttpRequest& request) const;
     [[nodiscard]] HttpResponse handleGetRequest(const HttpRequest& request) const;

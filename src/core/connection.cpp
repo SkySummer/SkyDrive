@@ -18,6 +18,12 @@
 #include "utils/upload_file.h"
 #include "utils/url.h"
 
+namespace {
+    std::string formatSize(const size_t bytes) {
+        return std::format("{} {}", bytes, bytes == 1 ? "byte" : "bytes");
+    }
+}  // namespace
+
 Connection::Connection(const int client_fd, const sockaddr_in& addr, EpollManager* epoll, Logger* logger,
                        StaticFile* static_file, UserManager* user_manager, const bool linger)
     : client_fd_(client_fd),
@@ -30,7 +36,7 @@ Connection::Connection(const int client_fd, const sockaddr_in& addr, EpollManage
     applyLinger(linger);
 
     // 将客户端 socket 添加到 epoll 中，监听读写事件
-    epoll_manager_->addFd(client_fd_, EPOLLIN);
+    epoll_manager_->addFd(client_fd_, EPOLLIN | EPOLLET | EPOLLONESHOT);
 
     logger_->log(LogLevel::INFO, info_, "New client connected.");
 }
@@ -49,6 +55,9 @@ const Address& Connection::info() const {
 
 void Connection::handle() const {
     readAndHandleRequest();
+
+    // 处理完请求后，重新注册 epoll 事件
+    epoll_manager_->modFd(client_fd_, EPOLLIN | EPOLLET | EPOLLONESHOT);
 }
 
 void Connection::readAndHandleRequest() const {
@@ -57,60 +66,82 @@ void Connection::readAndHandleRequest() const {
         return;
     }
 
-    constexpr std::size_t buffer_size = 4096;
+    constexpr std::size_t buffer_size = 8192;
     std::array<char, buffer_size> buffer{};  // 用于存储从客户端接收到的数据
-    const ssize_t bytes_read = read(client_fd_, buffer.data(), buffer.size());
 
-    if (bytes_read == 0) {
-        // 如果读到 0 字节，说明客户端关闭连接
-        if (callback_) {
-            callback_(client_fd_);
+    while (true) {
+        const ssize_t bytes_read = recv(client_fd_, buffer.data(), buffer_size, 0);
+
+        if (bytes_read == 0) {
+            // 客户端关闭连接
+            if (callback_) {
+                callback_(client_fd_);
+            }
+            break;
         }
-        return;
+
+        if (bytes_read < 0) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                break;
+            }
+            if (errno == ECONNRESET) {
+                logger_->log(LogLevel::INFO, info_, "Connection reset by peer.");
+            } else {
+                logger_->log(LogLevel::ERROR, info_, std::format("Failed to read from client: {}", strerror(errno)));
+            }
+
+            if (callback_) {
+                callback_(client_fd_);
+            }
+            break;
+        }
+
+        request_buffer_.append(buffer.data(), bytes_read);
     }
 
-    if (bytes_read < 0) {
-        if (errno == EAGAIN || errno == EWOULDBLOCK) {
-            return;  // 没有更多数据可读
-        }
-        if (errno == ECONNRESET) {
-            logger_->log(LogLevel::INFO, info_, "Connection reset by peer.");
-        } else {
-            logger_->log(LogLevel::ERROR, info_, std::format("Failed to read from client: {}", strerror(errno)));
-        }
+    tryParseAndHandleRequest();
+}
 
-        if (callback_) {
-            callback_(client_fd_);
-        }
-        return;
-    }
-
+void Connection::tryParseAndHandleRequest() const {
     std::string response;
 
     try {
-        // 将读取的内容转换为 std::string 以便处理
-        const std::string request(buffer.data(), bytes_read);
+        if (!request_.isHeaderParsed()) {
+            if (!request_.parseHeader(request_buffer_)) {
+                // 请求头不完整
+                return;
+            }
+        }
 
-        const HttpRequest http_request(request);
+        if (request_buffer_.size() < request_.totalExpectedLength()) {
+            // 请求体不完整
+            return;
+        }
 
-        response = handleRequest(http_request).build();
+        logger_->log(LogLevel::DEBUG, info_,
+                     std::format("Received {} from client.", formatSize(request_buffer_.size())));
+
+        request_.parseBody(request_buffer_);
+        response = handleRequest(request_).build();
     } catch (const std::invalid_argument& e) {
         logger_->log(LogLevel::INFO, info_, std::format("Invalid HTTP request: {}", e.what()));
         constexpr int error_code = 400;
         response = HttpResponse::responseError(error_code).build();
     } catch (const std::exception& e) {
-        logger_->log(LogLevel::ERROR, info_, std::format("Exception: {}", e.what()));
+        logger_->log(LogLevel::ERROR, info_, std::format("Exception during request parsing: {}", e.what()));
         constexpr int error_code = 500;
         response = HttpResponse::responseError(error_code).build();
     }
 
     if (response.empty()) {
-        logger_->log(LogLevel::ERROR, info_, "Empty response generated.");
+        logger_->log(LogLevel::ERROR, info_, "Generated response is empty.");
         constexpr int error_code = 500;
         response = HttpResponse::responseError(error_code).build();
     }
 
-    write(client_fd_, response.c_str(), response.size());
+    if (send(client_fd_, response.c_str(), response.size(), 0) < static_cast<ssize_t>(response.size())) {
+        logger_->log(LogLevel::ERROR, info_, std::format("Failed to send response: {}", strerror(errno)));
+    }
 
     if (callback_) {
         callback_(client_fd_);
