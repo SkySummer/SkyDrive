@@ -53,7 +53,7 @@ const Address& Connection::info() const {
     return info_;
 }
 
-void Connection::handle() const {
+void Connection::handleRead() const {
     readAndHandleRequest();
 
     // 处理完请求后，重新注册 epoll 事件
@@ -74,10 +74,8 @@ void Connection::readAndHandleRequest() const {
 
         if (bytes_read == 0) {
             // 客户端关闭连接
-            if (callback_) {
-                callback_(client_fd_);
-            }
-            break;
+            requestCloseConnection();
+            return;
         }
 
         if (bytes_read < 0) {
@@ -90,10 +88,8 @@ void Connection::readAndHandleRequest() const {
                 logger_->log(LogLevel::ERROR, info_, std::format("Failed to read from client: {}", strerror(errno)));
             }
 
-            if (callback_) {
-                callback_(client_fd_);
-            }
-            break;
+            requestCloseConnection();
+            return;
         }
 
         request_buffer_.append(buffer.data(), bytes_read);
@@ -139,13 +135,44 @@ void Connection::tryParseAndHandleRequest() const {
         response = HttpResponse::responseError(error_code).build();
     }
 
-    if (send(client_fd_, response.c_str(), response.size(), 0) < static_cast<ssize_t>(response.size())) {
-        logger_->log(LogLevel::ERROR, info_, std::format("Failed to send response: {}", strerror(errno)));
+    write_buffer_ = std::move(response);
+    pending_buffer_ = write_buffer_;
+    epoll_manager_->modFd(client_fd_, EPOLLOUT | EPOLLET | EPOLLONESHOT);
+    logger_->log(LogLevel::DEBUG, info_, std::format("Pending buffer size: {}", formatSize(pending_buffer_.size())));
+}
+
+void Connection::handleWrite() const {
+    if (closed_) {
+        logger_->log(LogLevel::WARNING, info_, "Connection already closed.");
+        return;
     }
 
-    if (callback_) {
-        callback_(client_fd_);
+    while (!pending_buffer_.empty()) {
+        const ssize_t bytes_sent = send(client_fd_, pending_buffer_.data(), pending_buffer_.size(), 0);
+
+        if (bytes_sent < 0) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                epoll_manager_->modFd(client_fd_, EPOLLOUT | EPOLLET | EPOLLONESHOT);
+                return;
+            }
+            if (errno == ECONNRESET) {
+                logger_->log(LogLevel::INFO, info_, "Connection reset by peer.");
+            } else {
+                logger_->log(LogLevel::ERROR, info_, std::format("Failed to send response: {}", strerror(errno)));
+            }
+
+            requestCloseConnection();
+            return;
+        }
+
+        pending_buffer_.remove_prefix(bytes_sent);
     }
+
+    // 发送完毕
+    logger_->log(LogLevel::DEBUG, info_, std::format("Sent {} to client.", formatSize(write_buffer_.size())));
+    epoll_manager_->modFd(client_fd_, EPOLLIN | EPOLLET | EPOLLONESHOT);
+
+    requestCloseConnection();
 }
 
 HttpResponse Connection::handleRequest(const HttpRequest& request) const {
@@ -228,6 +255,14 @@ HttpResponse Connection::handlePostRequest(const HttpRequest& request) const {
 
     constexpr int error_code = 405;
     return HttpResponse::responseError(error_code);
+}
+
+void Connection::requestCloseConnection() const {
+    if (callback_) {
+        callback_(client_fd_);
+    } else {
+        logger_->log(LogLevel::WARNING, info_, "No callback set for closing connection.");
+    }
 }
 
 void Connection::closeConnection() {

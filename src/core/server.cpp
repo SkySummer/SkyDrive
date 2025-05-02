@@ -98,7 +98,7 @@ void Server::run() {
             if (const int client_fd = events.at(i).data.fd; client_fd == listen_fd_) {
                 handleNewConnection();
             } else {
-                dispatchClient(client_fd);
+                dispatchClient(client_fd, events.at(i).events);
             }
         }
     }
@@ -139,7 +139,7 @@ void Server::handleNewConnection() {
     }
 }
 
-void Server::dispatchClient(const int client_fd) {
+void Server::dispatchClient(const int client_fd, const uint32_t events) {
     std::shared_ptr<Connection> conn;
     {
         std::lock_guard lock(connections_mutex_);
@@ -156,7 +156,14 @@ void Server::dispatchClient(const int client_fd) {
     }
 
     try {
-        thread_pool_->enqueue([conn] { conn->handle(); });
+        thread_pool_->enqueue([conn, events] {
+            if (events & EPOLLIN) {
+                conn->handleRead();
+            }
+            if (events & EPOLLOUT) {
+                conn->handleWrite();
+            }
+        });
     } catch (const std::exception& e) {
         logger_->log(LogLevel::ERROR, conn->info(), std::format("Failed to enqueue task: {}", e.what()));
     }

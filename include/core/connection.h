@@ -30,7 +30,8 @@ public:
     [[nodiscard]] int fd() const;
     [[nodiscard]] const Address& info() const;
 
-    void handle() const;
+    void handleRead() const;
+    void handleWrite() const;
 
     void setCloseRequestCallback(std::function<void(int)> callback);
 
@@ -45,18 +46,21 @@ private:
     mutable std::string request_buffer_;  // 用于存储请求数据
     mutable HttpRequest request_;         // 用于解析请求
 
+    mutable std::string write_buffer_;         // 用于存储响应数据
+    mutable std::string_view pending_buffer_;  // 用于存储待发送的数据
+
     std::atomic<bool> closed_{false};  // 是否关闭连接
 
     std::function<void(int)> callback_;
 
     void readAndHandleRequest() const;
-
     void tryParseAndHandleRequest() const;
 
     [[nodiscard]] HttpResponse handleRequest(const HttpRequest& request) const;
     [[nodiscard]] HttpResponse handleGetRequest(const HttpRequest& request) const;
     [[nodiscard]] HttpResponse handlePostRequest(const HttpRequest& request) const;
 
+    void requestCloseConnection() const;
     void closeConnection();
     void applyLinger(bool flag) const;
 };

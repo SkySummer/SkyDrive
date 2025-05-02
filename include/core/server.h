@@ -6,6 +6,8 @@
 #include <mutex>
 #include <unordered_map>
 
+#include <sys/types.h>
+
 #include "core/connection.h"
 #include "core/epoll_manager.h"
 
@@ -57,7 +59,7 @@ private:
     void handleNewConnection();
 
     // 分发任务
-    void dispatchClient(int client_fd);
+    void dispatchClient(int client_fd, uint32_t events);
 
     // 设置为非阻塞模式
     static int setNonBlocking(int socket_fd);
