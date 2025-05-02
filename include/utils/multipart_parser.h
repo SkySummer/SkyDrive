@@ -2,6 +2,7 @@
 #define UTILS_MULTIPART_PARSER_H
 
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 struct FormField {
@@ -20,18 +21,20 @@ class MultipartParser {
 public:
     MultipartParser(std::string body, std::string boundary);
 
-    void parse(const std::string& data);
     [[nodiscard]] const std::vector<FormField>& fields() const;
     [[nodiscard]] const std::vector<UploadedFile>& files() const;
 
 private:
-    void parse() const;
-
     std::string body_;
     std::string boundary_;
 
+    mutable std::unordered_map<std::string, std::string> headers_;
     mutable std::vector<FormField> fields_;
     mutable std::vector<UploadedFile> files_;
+
+    void parse() const;
+
+    void parseHeaders(const std::string& headers) const;
 
     static std::string getHeaderValue(const std::string& header, const std::string& key);
 

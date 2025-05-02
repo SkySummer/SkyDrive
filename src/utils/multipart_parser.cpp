@@ -37,26 +37,22 @@ void MultipartParser::parse() const {
         }
 
         const std::string headers = part.substr(0, header_end);
-        const std::string content = part.substr(header_end + 4);
+        std::string content = part.substr(header_end + 4);
+        parseHeaders(headers);
 
-        // 处理 headers
-        std::istringstream header_stream(headers);
-        std::string disposition_line;
-        std::getline(header_stream, disposition_line);
+        if (content.ends_with("\r\n")) {
+            content.erase(content.length() - 2);
+        }
 
-        if (disposition_line.starts_with("Content-Disposition")) {
-            const std::string name = getHeaderValue(disposition_line, "name");
+        if (const auto iter = headers_.find("Content-Disposition"); iter != headers_.end()) {
+            const std::string name = getHeaderValue(iter->second, "name");
 
-            if (const std::string filename = getHeaderValue(disposition_line, "filename"); !filename.empty()) {
+            if (const std::string filename = getHeaderValue(iter->second, "filename"); !filename.empty()) {
                 // 处理文件上传
                 std::string content_type = "application/octet-stream";
-                std::string line;
-                while (std::getline(header_stream, line)) {
-                    if (line.starts_with("Content-Type:")) {
-                        content_type = line.substr(std::string("Content-Type:").length());
-                        trim(content_type);
-                        break;
-                    }
+                if (const auto type_iter = headers_.find("Content-Type"); type_iter != headers_.end()) {
+                    content_type = type_iter->second;
+                    trim(content_type);
                 }
 
                 files_.emplace_back(name, filename, content_type, content);
@@ -67,6 +63,25 @@ void MultipartParser::parse() const {
         }
 
         pos = next;
+    }
+}
+
+void MultipartParser::parseHeaders(const std::string& headers) const {
+    std::istringstream header_stream(headers);
+    std::string line;
+
+    while (std::getline(header_stream, line)) {
+        if (!line.empty() && line.back() == '\r') {
+            line.pop_back();
+        }
+
+        if (const size_t colon = line.find(':'); colon != std::string::npos) {
+            std::string key = line.substr(0, colon);
+            std::string value = line.substr(colon + 1);
+            trim(key);
+            trim(value);
+            headers_[key] = value;
+        }
     }
 }
 
