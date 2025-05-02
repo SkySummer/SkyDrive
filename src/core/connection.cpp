@@ -66,8 +66,8 @@ void Connection::readAndHandleRequest() const {
         return;
     }
 
-    constexpr std::size_t buffer_size = 8192;
-    std::array<char, buffer_size> buffer{};  // 用于存储从客户端接收到的数据
+    constexpr std::size_t buffer_size = 65536;  // 64KB 缓冲区
+    std::array<char, buffer_size> buffer{};     // 用于存储从客户端接收到的数据
 
     while (true) {
         const ssize_t bytes_read = recv(client_fd_, buffer.data(), buffer_size, 0);
