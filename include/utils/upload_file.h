@@ -38,7 +38,8 @@ private:
 
     [[nodiscard]] bool write(const std::filesystem::path& path, const std::string& data, const Address& info) const;
 
-    [[nodiscard]] std::string buildMessage() const;
+    [[nodiscard]] HttpResponse buildMessage(const std::string& location) const;
+    [[nodiscard]] HttpResponse buildJsonResponse() const;
     [[nodiscard]] static std::string getLocation(const std::string& path);
 };
 

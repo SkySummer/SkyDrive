@@ -215,15 +215,8 @@ HttpResponse StaticFile::render(HttpResponse builder, const HttpRequest& request
     }
 
     // 已登录
-    builder.renderTemplate("header", getTemplate("header-user.html").value_or(""))
+    return builder.renderTemplate("header", getTemplate("header-user.html").value_or(""))
         .renderTemplate("username", *username);
-
-    if (page_type == PageType::DRIVE) {
-        // 网盘页面
-        return builder.renderTemplate("upload", getTemplate("upload.html").value_or(""));
-    }
-
-    return builder.renderTemplate("upload", "");
 }
 
 std::optional<std::string> StaticFile::getTemplate(const std::string& name) const {

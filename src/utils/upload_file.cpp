@@ -12,6 +12,48 @@
 #include "utils/multipart_parser.h"
 #include "utils/url.h"
 
+namespace {
+    void escapeJsonString(std::string& input) {
+        std::string output;
+        output.reserve(input.size());
+
+        for (char now : input) {
+            switch (now) {
+                case '\"':
+                    output += "\\\"";
+                    break;
+                case '\\':
+                    output += "\\\\";
+                    break;
+                case '\b':
+                    output += "\\b";
+                    break;
+                case '\f':
+                    output += "\\f";
+                    break;
+                case '\n':
+                    output += "\\n";
+                    break;
+                case '\r':
+                    output += "\\r";
+                    break;
+                case '\t':
+                    output += "\\t";
+                    break;
+                default:
+                    static const unsigned char min_ascii = 0x20;
+                    if (static_cast<unsigned char>(now) < min_ascii) {
+                        output += "\\u" + std::format("{:04x}", static_cast<int>(now));
+                    } else {
+                        output += now;
+                    }
+            }
+        }
+
+        input = std::move(output);
+    }
+}  // namespace
+
 UploadFile::UploadFile(const HttpRequest& request, Logger* logger, StaticFile* static_file, const Address& info)
     : logger_(logger), static_file_(static_file), drive_path_(static_file->getDrivePath()) {
     response_ = handle(request, info);
@@ -132,7 +174,7 @@ HttpResponse UploadFile::handle(const HttpRequest& request, const Address& info)
     }
 
     std::ranges::sort(failure_files_);
-    return HttpResponse::responseAlert(buildMessage(), getLocation(path));
+    return buildJsonResponse();
 }
 
 bool UploadFile::write(const std::filesystem::path& path, const std::string& data, const Address& info) const {
@@ -154,7 +196,7 @@ bool UploadFile::write(const std::filesystem::path& path, const std::string& dat
     return true;
 }
 
-std::string UploadFile::buildMessage() const {
+HttpResponse UploadFile::buildMessage(const std::string& location) const {
     std::string message = std::format("上传完成：{} 成功，{} 失败", success_count_, failure_files_.size());
 
     if (!failure_files_.empty()) {
@@ -172,7 +214,37 @@ std::string UploadFile::buildMessage() const {
         }
     }
 
-    return message;
+    return HttpResponse::responseAlert(message, location);
+}
+
+HttpResponse UploadFile::buildJsonResponse() const {
+    std::string json = "{";
+
+    json += std::format(R"("status":"{}",)", failure_files_.empty() ? "success" : "error");
+    json += std::format(R"("success_count":{},)", success_count_);
+    json += std::format(R"("failure_count":{},)", failure_files_.size());
+    json += R"("failure_files":)";
+
+    if (!failure_files_.empty()) {
+        json += "[";
+
+        for (const auto& [filename, error] : failure_files_) {
+            std::string safe_filename = filename.empty() ? "<空文件名>" : filename;
+            std::string safe_error = error.empty() ? "未知错误" : error;
+            escapeJsonString(safe_filename);
+            escapeJsonString(safe_error);
+
+            json += std::format(R"({{"filename":"{}", "error":"{}"}},)", safe_filename, safe_error);
+        }
+
+        json.pop_back();  // 移除最后一个逗号
+        json += "]";
+    } else {
+        json += "null";
+    }
+
+    json += "}";
+    return HttpResponse{}.setContentType("application/json").setBody(json);
 }
 
 std::string UploadFile::getLocation(const std::string& path) {

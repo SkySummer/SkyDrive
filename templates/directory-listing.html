@@ -10,7 +10,22 @@
 </head>
 
 <body>
-    {{header}}
+    <header>
+        <div class="title">
+            <a href="/">SkyDrive</a>
+        </div>
+        <div class="btn-group">
+            <div class="user-info">
+                <span>欢迎，{{username}}</span> &nbsp;|&nbsp;
+                <form action="/logout" method="post">
+                    <button type="submit" class="logout">退出</button>
+                </form>
+            </div>
+            <a href="/files" class="btn btn-hollow">全部文件</a>
+            <input type="file" name="file" id="fileInput" class="upload-input" multiple />
+            <label for="fileInput" class="btn btn-solid upload-label">上传文件</label>
+        </div>
+    </header>
 
     <main>
         <h1>📁 Index of {{path}}</h1>
@@ -25,6 +40,75 @@
             {{entries}}
         </table>
     </main>
+
+    <div id="uploadToast" class="upload-toast" style="display: none;">
+        <div class="toast-content">
+            <span id="toastMessage">正在上传...</span>
+            <progress id="toastProgress" value="0" max="100"></progress>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('fileInput').addEventListener('change', function () {
+            const files = this.files;
+            if (!files.length) return;
+
+            const formData = new FormData();
+            for (const file of files) {
+                formData.append('file', file);
+            }
+
+            const xhr = new XMLHttpRequest();
+            const toast = document.getElementById('uploadToast');
+            const progress = document.getElementById('toastProgress');
+            const message = document.getElementById('toastMessage');
+
+            xhr.upload.onprogress = function (e) {
+                if (e.lengthComputable) {
+                    progress.value = (e.loaded / e.total) * 100;
+                }
+            };
+
+            xhr.onloadstart = function () {
+                message.textContent = "正在上传...";
+                progress.value = 0;
+                toast.style.display = 'block';
+            };
+
+            xhr.onloadend = function () {
+                if (xhr.status === 200) {
+                    try {
+                        const response = JSON.parse(xhr.responseText);
+
+                        const total = response.success_count + response.failure_count;
+                        const success = response.success_count;
+                        const failure = response.failure_count;
+
+                        if (response.status === "success" || failure === 0) {
+                            message.textContent = `上传成功：${total} 个文件`;
+                        } else if (success === 0) {
+                            message.textContent = `上传失败：${total} 个文件`;
+                        } else {
+                            message.textContent = `部分成功：成功 ${success} 个，失败 ${failure} 个`;
+                        }
+                    } catch (e) {
+                        message.textContent = "响应格式错误";
+                    }
+                } else {
+                    message.textContent = `上传失败: HTTP ${xhr.status}`;
+                }
+
+                setTimeout(() => {
+                    toast.style.display = 'none';
+                    location.reload();
+                }, 2000);
+            };
+
+            xhr.open('POST', 'upload');
+            xhr.send(formData);
+            document.getElementById('fileInput').value = "";
+        });
+    </script>
 
     {{footer}}
 </body>
