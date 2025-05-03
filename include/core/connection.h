@@ -53,8 +53,7 @@ private:
 
     std::function<void(int)> callback_;
 
-    void readAndHandleRequest() const;
-    void tryParseAndHandleRequest() const;
+    bool tryParse() const;
 
     [[nodiscard]] HttpResponse handleRequest(const HttpRequest& request) const;
     [[nodiscard]] HttpResponse handleGetRequest(const HttpRequest& request) const;

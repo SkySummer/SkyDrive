@@ -54,13 +54,6 @@ const Address& Connection::info() const {
 }
 
 void Connection::handleRead() const {
-    readAndHandleRequest();
-
-    // 处理完请求后，重新注册 epoll 事件
-    epoll_manager_->modFd(client_fd_, EPOLLIN | EPOLLET | EPOLLONESHOT);
-}
-
-void Connection::readAndHandleRequest() const {
     if (closed_) {
         logger_->log(LogLevel::WARNING, info_, "Connection already closed.");
         return;
@@ -80,7 +73,12 @@ void Connection::readAndHandleRequest() const {
 
         if (bytes_read < 0) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                break;
+                if (tryParse()) {
+                    epoll_manager_->modFd(client_fd_, EPOLLOUT | EPOLLET | EPOLLONESHOT);
+                } else {
+                    epoll_manager_->modFd(client_fd_, EPOLLIN | EPOLLET | EPOLLONESHOT);
+                }
+                return;
             }
             if (errno == ECONNRESET) {
                 logger_->log(LogLevel::INFO, info_, "Connection reset by peer.");
@@ -94,24 +92,22 @@ void Connection::readAndHandleRequest() const {
 
         request_buffer_.append(buffer.data(), bytes_read);
     }
-
-    tryParseAndHandleRequest();
 }
 
-void Connection::tryParseAndHandleRequest() const {
+bool Connection::tryParse() const {
     std::string response;
 
     try {
         if (!request_.isHeaderParsed()) {
             if (!request_.parseHeader(request_buffer_)) {
                 // 请求头不完整
-                return;
+                return false;
             }
         }
 
         if (request_buffer_.size() < request_.totalExpectedLength()) {
             // 请求体不完整
-            return;
+            return false;
         }
 
         logger_->log(LogLevel::DEBUG, info_,
@@ -137,8 +133,8 @@ void Connection::tryParseAndHandleRequest() const {
 
     write_buffer_ = std::move(response);
     pending_buffer_ = write_buffer_;
-    epoll_manager_->modFd(client_fd_, EPOLLOUT | EPOLLET | EPOLLONESHOT);
     logger_->log(LogLevel::DEBUG, info_, std::format("Pending buffer size: {}", formatSize(pending_buffer_.size())));
+    return true;
 }
 
 void Connection::handleWrite() const {
@@ -170,8 +166,6 @@ void Connection::handleWrite() const {
 
     // 发送完毕
     logger_->log(LogLevel::DEBUG, info_, std::format("Sent {} to client.", formatSize(write_buffer_.size())));
-    epoll_manager_->modFd(client_fd_, EPOLLIN | EPOLLET | EPOLLONESHOT);
-
     requestCloseConnection();
 }
 
